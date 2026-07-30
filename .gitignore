@@ -1,0 +1,25 @@
+# Rác build + phụ thuộc
+node_modules/
+dist/
+*.log
+
+# Trạng thái on-chain sinh ra lúc chạy (không phải mã nguồn)
+.treasury-onchain/
+
+# BÍ MẬT — tuyệt đối không vào git. Nguồn duy nhất của secret là $AGENT_SECRETS.
+.env
+.env.*
+!.env.example
+*.skey
+*.vkey
+*.key
+*.pem
+*.pat
+*.mnemonic
+*.seed
+
+# Rule/state của trợ lý — thuộc máy từng người, không thuộc repo
+_Agents/
+CLAUDE.md
+.claude/
+_wt-*
