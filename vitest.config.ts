@@ -1,11 +1,12 @@
 import { defineConfig } from "vitest/config";
 
-// Bài kiểm của kho NÀY, không phải của kho khác.
+// THIS repository's tests, not another repository's.
 //
-// `vendor/lamp` là bản LAMP ghim commit, dựng bằng `scripts/pin-lamp.sh` (xem tệp đó). Nó mang
-// theo bộ kiểm của chính LAMP. Để mặc thì `vitest` gom cả hai bộ vào một con số, và cổng chất
-// lượng của kho này sẽ xanh hay đỏ theo mã của kho khác — cùng lúc che mất số bài kiểm thật của
-// mình. Loại nó ra ở đây, không loại ở dòng lệnh, để mọi người chạy đều được cùng một con số.
+// `vendor/lamp` is a pinned checkout of LAMP produced by `scripts/pin-lamp.sh` (see that file).
+// It brings LAMP's own test suite with it. Left alone, `vitest` folds both suites into one number,
+// so this repository's quality gate would go green or red according to somebody else's code —
+// while hiding this repository's real test count. Excluded here rather than on the command line,
+// so that everyone who runs it gets the same number.
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts", "e2e/**/*.test.ts"],

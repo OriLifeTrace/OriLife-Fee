@@ -1,13 +1,14 @@
-// OriLife — bộ định giá phí (fee engine). Một tác vụ người dùng → FeeQuote: tổng phí
-// (oil LAMP) + phân rã về 3 bucket treasury. Tổng quát hoá field-reid/animal_fee.py.
+// OriLife — the fee engine. One user task in, one FeeQuote out: the total fee (in LAMP oil)
+// plus its split across the three treasury buckets. A generalisation of field-reid/animal_fee.py.
 //
-// Luồng:
-//   fee_usd = clamp( (base + value_add) × demand × anchor_tier × event ,  ≤ trần )
-//   fee_oil = round(fee_usd / lampUsd × OIL_PER_LAMP)        (USD → LAMP → oil)
-//   chia fee_oil (bigint, floor) về 3 bucket — anchor nhận PHẦN DƯ để Σ bucket == fee_oil.
+// The flow:
+//   fee_usd = clamp( (base + value_add) × demand × anchor_tier × event ,  <= cap )
+//   fee_oil = round(fee_usd / lampUsd × OIL_PER_LAMP)        (USD -> LAMP -> oil)
+//   split fee_oil (bigint, floor) across three buckets — anchor takes the REMAINDER so that
+//   Σ buckets == fee_oil.
 //
-// Bảo toàn (then chốt cho on-chain): Σ bucket.oil == fee_oil TUYỆT ĐỐI (không hụt 1 oil).
-// Đây là điều kiện để giao dịch Collect giữ Σout=Σin per-asset (custody.ak C-COL-4).
+// Conservation is the load-bearing property here: Σ bucket.oil == fee_oil EXACTLY, not one oil
+// short. That is what lets the Collect transaction keep Σout = Σin per asset (custody.ak C-COL-4).
 
 import {
   OIL_PER_LAMP, PROTOCOL_CUT_BPS, RESOURCE_SPLIT_BPS, ANCHOR_TIER_MULT,
@@ -21,24 +22,25 @@ import { getTask } from "./tasks.js";
 const BPS_DENOM = 10_000n;
 
 export interface QuoteInput {
-  /** Khoá tác vụ (xem tasks.ts). */
+  /** Task key (see tasks.ts). */
   task: string;
-  /** Giá trị tài sản khai báo (USD) — cho tác vụ value-based. */
+  /** Declared asset value in USD — for value-based tasks. */
   declaredValueUsd?: number;
-  /** Ghi đè bậc neo. Tác vụ on-chain KHÔNG được hạ dưới defaultAnchorTier (L-1). */
+  /** Override the anchoring tier. An on-chain task may NOT go below defaultAnchorTier (L-1). */
   anchorTier?: AnchorTier;
-  /** Số sự kiện vòng đời đã ghi (chia sẻ chi phí cố định; mặc định 1). */
+  /** How many lifecycle events are already recorded (shares the fixed cost; defaults to 1). */
   lifecycleEvents?: number;
   /**
-   * Hệ số cầu [0.5, 3.0] (mặc định 1.0).
-   * ⚠️ TRUSTED SERVER INPUT — PHẢI do server tính qua DemandController/oracle, KHÔNG nhận
-   * thẳng từ client (nếu không, client ghim 0.5 trả phí tối thiểu — H-1). Tầng API phải
-   * chặn field này từ client.
+   * Demand factor in [0.5, 3.0] (defaults to 1.0).
+   * WARNING — TRUSTED SERVER INPUT. It MUST be computed server-side through DemandController or
+   * an oracle, and must never be taken straight from a client: a client that pins it to 0.5 pays
+   * the minimum fee forever (H-1). The API layer is responsible for stripping this field from
+   * client requests.
    */
   demandFactor?: number;
 }
 
-/** Thứ tự bậc neo (để chặn hạ thấp dưới mặc định cho tác vụ on-chain). */
+/** Tier ordering, used to stop an on-chain task dropping below its default. */
 const TIER_ORDER: Record<AnchorTier, number> = {
   no_anchor: 0, batch_daily: 1, milestone: 2, immediate: 3,
 };
@@ -69,14 +71,15 @@ function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
 }
 
-/** floor(x × bps / 10000) trên bigint (x ≥ 0 ⇒ trunc == floor). */
+/** floor(x × bps / 10000) over bigint (for x >= 0, truncation equals floor). */
 function bpsOf(x: bigint, bps: bigint): bigint {
   return (x * bps) / BPS_DENOM;
 }
 
 /**
- * Cập nhật demand_factor từ tín hiệu cung/cầu MAGIC (EMA, clamp ±10%/bước, bound).
- * Mirror animal_fee.demand_factor_from_signals. Cầu>cung → tăng phí; cung>cầu → giảm.
+ * Update demand_factor from MAGIC supply/demand signals (EMA, clamped to ±10% per step, bounded).
+ * Mirrors animal_fee.demand_factor_from_signals. Demand above supply raises the fee; supply above
+ * demand lowers it.
  */
 export function demandFactorFromSignals(
   prev: number,
@@ -93,17 +96,18 @@ export function demandFactorFromSignals(
 }
 
 /**
- * Bộ điều khiển CẦU server-side: giữ state EMA demand_factor, cập nhật từ tín hiệu cung/cầu
- * (đã tổng hợp/đã ký — KHÔNG phải self-report). Đây là NGUỒN demand_factor hợp lệ truyền vào
- * quoteFee; client KHÔNG được tự đặt (H-1). Tín hiệu nên đến từ MAGIC AppEconomics actual
- * consumption (oracle) — wire ở v1.1 (H-2, còn là gap).
+ * The server-side demand controller: holds the demand_factor EMA state and updates it from
+ * supply/demand signals that are aggregated and signed — never self-reported. This is the only
+ * legitimate SOURCE of the demand_factor passed to quoteFee; a client must never set it (H-1).
+ * The signals should come from MAGIC AppEconomics actual consumption via an oracle — wiring that
+ * up is deferred to v1.1 and is still an open gap (H-2).
  */
 export class DemandController {
   private df: number;
   constructor(initial = 1.0) {
     this.df = clamp(initial, DEMAND_FACTOR_MIN, DEMAND_FACTOR_MAX);
   }
-  /** Cập nhật từ tín hiệu (EMA, clamp ±10%/bước, bound). Trả demand_factor mới. */
+  /** Update from signals (EMA, clamped to ±10% per step, bounded). Returns the new factor. */
   update(magicConsumed: number, magicGenerated: number, utilization = 0): number {
     this.df = demandFactorFromSignals(this.df, magicConsumed, magicGenerated, utilization);
     return this.df;
@@ -114,8 +118,9 @@ export class DemandController {
 }
 
 /**
- * Chia tổng phí (oil) về 3 bucket theo cắt giao thức + tỉ lệ 4 tài nguyên.
- * ANCHOR nhận phần dư (remainder − storage − compute − bandwidth) → Σ == feeOil tuyệt đối.
+ * Split the total fee (oil) across the three buckets: protocol cut first, then the four-resource
+ * ratio. ANCHOR takes the remainder (remainder − storage − compute − bandwidth), which makes
+ * Σ buckets == feeOil exactly.
  */
 export function splitOil(feeOil: bigint): {
   protocolOil: bigint; lampnetOil: bigint; anchorOil: bigint;
@@ -126,50 +131,53 @@ export function splitOil(feeOil: bigint): {
   const storageOil = bpsOf(remainder, RESOURCE_SPLIT_BPS.storage);
   const computeOil = bpsOf(remainder, RESOURCE_SPLIT_BPS.compute);
   const bandwidthOil = bpsOf(remainder, RESOURCE_SPLIT_BPS.bandwidth);
-  const anchorOil = remainder - storageOil - computeOil - bandwidthOil; // hấp thụ dư
+  const anchorOil = remainder - storageOil - computeOil - bandwidthOil; // absorbs the remainder
   const lampnetOil = storageOil + computeOil + bandwidthOil;
   return { protocolOil, lampnetOil, anchorOil, storageOil, computeOil, bandwidthOil };
 }
 
-/** Định giá một tác vụ → FeeQuote. */
+/** Price one task and return a FeeQuote. */
 export function quoteFee(input: QuoteInput): FeeQuote {
   const t = getTask(input.task);
   let anchorTier = input.anchorTier ?? t.defaultAnchorTier;
-  // L-1: tác vụ on-chain không cho hạ bậc neo dưới mặc định (chống né phí neo bắt buộc).
+  // L-1: an on-chain task cannot drop below its default tier — otherwise the mandatory
+  // anchoring fee is avoidable.
   if (t.onChain && TIER_ORDER[anchorTier] < TIER_ORDER[t.defaultAnchorTier]) {
     anchorTier = t.defaultAnchorTier;
   }
   const demandFactor = clamp(input.demandFactor ?? 1.0, DEMAND_FACTOR_MIN, DEMAND_FACTOR_MAX);
   const events = Math.max(1, Math.floor(input.lifecycleEvents ?? 1));
 
-  // 1. Phần value-based (chỉ tác vụ valueBps>0), có SÀN chống khai thấp.
+  // 1. The value-based component (only for tasks with valueBps > 0), with a FLOOR so that
+  //    under-declaring the value does not pay.
   let valueAddUsd = 0;
   if (t.valueBps > 0) {
     const effectiveValue = Math.max(input.declaredValueUsd ?? 0, t.floorValueUsd);
     valueAddUsd = effectiveValue * (t.valueBps / 10000);
   }
 
-  // 2. Nhân hệ số cầu × bậc neo × sự kiện.
+  // 2. Multiply by demand factor × anchoring tier × event count.
   const eventMult = 1.0 + 0.15 * Math.log2(events);
   const tierMult = ANCHOR_TIER_MULT[anchorTier];
   const rawUsd = (t.baseFeeUsd + valueAddUsd) * demandFactor * tierMult * eventMult;
 
-  // 3. TRẦN cứng: ≤ min(MAX_FRACTION × truyền thống, trần tuyệt đối USD) — M-2 chặn DAO
-  //    thổi traditionalCost để vượt trần.
+  // 3. Hard cap: at most min(MAX_FRACTION × traditional cost, the absolute USD cap). The second
+  //    term is M-2: it stops the DAO inflating traditionalCost to raise the ceiling.
   const ceilingUsd = Math.min(t.traditionalCostUsd * MAX_FRACTION_OF_TRADITIONAL, MAX_FEE_USD_ABSOLUTE);
   const capped = rawUsd > ceilingUsd;
   const feeUsd = Math.max(0, Math.min(rawUsd, ceilingUsd));
 
-  // 4. USD → oil bằng BIGINT (tất định cross-node + tránh tràn float >2^53 — H-3).
-  //    feeOil = feeUsdMicro × OIL_PER_LAMP / lampUsdMicro. micro-USD nhỏ → float an toàn.
+  // 4. USD -> oil in BIGINT, so the result is deterministic across nodes and cannot overflow a
+  //    float past 2^53 (H-3). feeOil = feeUsdMicro × OIL_PER_LAMP / lampUsdMicro; micro-USD stays
+  //    small enough for the float step to be exact.
   const lampUsd = getLampUsd();
   const feeUsdMicro = BigInt(Math.round(feeUsd * 1e6));
-  const lampUsdMicro = BigInt(Math.round(lampUsd * 1e6)); // ≥ 1 do daoSetLampUsd kẹp biên
+  const lampUsdMicro = BigInt(Math.round(lampUsd * 1e6)); // >= 1, because daoSetLampUsd clamps it
   let feeOil = lampUsdMicro > 0n ? (feeUsdMicro * OIL_PER_LAMP) / lampUsdMicro : 0n;
-  // L-2: sàn chống làm tròn về 0 cho tác vụ có chi phí thật (feeUsd > 0 nhưng feeOil = 0).
+  // L-2: a floor so a task with a real cost never rounds to zero (feeUsd > 0 but feeOil == 0).
   if (feeOil === 0n && feeUsd > 0) feeOil = MIN_FEE_OIL;
 
-  // 5. Chia về bucket (bigint, anchor hấp thụ dư).
+  // 5. Split into buckets (bigint; anchor absorbs the remainder).
   const s = splitOil(feeOil);
 
   const buckets: BucketShare[] = [

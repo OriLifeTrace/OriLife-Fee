@@ -29,5 +29,5 @@
     "src/treasuryClient.ts",
     "tests/emulator.integration.test.ts"
   ],
-  "$comment": "Phần LÕI — không nhập gì từ vendor/lamp, nên clone về là biên dịch được ngay. Cổng CI dùng tệp này; tsconfig.json (đầy đủ) cần kho LAMP, xem scripts/pin-lamp.sh."
+  "$comment": "The CORE: imports nothing from vendor/lamp, so a fresh clone compiles. The CI gate uses this file. The full tsconfig.json needs the LAMP repository — see scripts/pin-lamp.sh."
 }

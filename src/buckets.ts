@@ -1,21 +1,22 @@
-// OriLife — phân loại BUCKET treasury (category id trong sổ CustodyDatum).
+// OriLife — treasury BUCKET classification (the category id inside the CustodyDatum ledger).
 //
-// "Các treasury" ở đây = các BUCKET kế toán bên trong MỘT custody
-// instance OriLife (sổ ledger đa-asset × bucket — xem LAMP/Treasury types.ak). Một
-// giao dịch Collect duy nhất nạp LAMP vào nhiều bucket bằng nhiều CollectItem khác
-// `category`. Tách bucket theo MỤC ĐÍCH dòng tiền, không theo người trả:
+// "The treasuries" here means the accounting BUCKETS inside ONE OriLife custody instance
+// (a multi-asset × bucket ledger — see LAMP/Treasury types.ak). A single Collect transaction
+// deposits LAMP into several buckets via several CollectItems with different `category`.
+// Buckets split by WHERE THE MONEY IS GOING, not by who paid:
 //
-//   PROTOCOL       — phần cắt giao thức MagicLamp (vận hành orchestrator, kho bạc DAO).
-//   LAMPNET_REWARD — phần trả người đóng góp phần cứng LampNet (storage/compute/bandwidth).
-//                    Giữ ở đây dạng kế toán; node redeem sau qua Release + vesting
-//                    (LampNet Reward-Feat §3 Capped Drop). KHÔNG trả thẳng trong tx phí.
-//   ANCHOR         — quỹ bù chi phí neo on-chain Cardano (min-UTxO + tx fee batch MMR).
+//   PROTOCOL       — the MagicLamp protocol cut (orchestrator operations, DAO treasury).
+//   LAMPNET_REWARD — the share owed to LampNet hardware contributors (storage/compute/bandwidth).
+//                    Held here as an accounting entry only; nodes redeem later through
+//                    Release + vesting (LampNet Reward-Feat §3 Capped Drop). It is NOT paid out
+//                    inside the fee transaction.
+//   ANCHOR         — the fund covering Cardano on-chain anchoring costs (min-UTxO + MMR batch fee).
 //
-// Bất biến: tổng LAMP của 3 bucket = đúng phí người dùng trả (Σ bucket = fee_total_oil).
-// LAMP fixed-supply: khoản vào treasury là CHUYỂN TRẠNG THÁI circulating→accounting,
-// KHÔNG đốt (Σout=Σin per-asset, ép bởi custody.ak C-COL-4).
+// Invariant: the three buckets sum to exactly what the user paid (Σ bucket = fee_total_oil).
+// LAMP is fixed-supply, so money entering the treasury is a state change from circulating to
+// accounting — never a burn (Σout = Σin per asset, enforced by custody.ak C-COL-4).
 
-/** Id bucket (category) — khớp sổ ledger CustodyDatum. Số nguyên, DAO có thể mở thêm. */
+/** Bucket id (category) — matches the CustodyDatum ledger. An integer; the DAO may add more. */
 export const BUCKET = {
   PROTOCOL: 0n,
   LAMPNET_REWARD: 1n,
@@ -24,14 +25,14 @@ export const BUCKET = {
 
 export type BucketName = keyof typeof BUCKET;
 
-/** Nhãn người-đọc cho từng bucket (log/giải thích, không vào on-chain). */
+/** Human-readable label per bucket (for logs and explanations; never goes on-chain). */
 export const BUCKET_LABEL: Record<BucketName, string> = {
-  PROTOCOL: "Kho bạc giao thức MagicLamp (protocol cut)",
-  LAMPNET_REWARD: "Quỹ thưởng node LampNet (storage/compute/bandwidth)",
-  ANCHOR: "Quỹ neo on-chain Cardano (anchor)",
+  PROTOCOL: "MagicLamp protocol treasury (protocol cut)",
+  LAMPNET_REWARD: "LampNet node reward pool (storage/compute/bandwidth)",
+  ANCHOR: "Cardano on-chain anchoring fund",
 };
 
-/** Tra category (bigint) từ tên bucket. */
+/** Look up the category (bigint) from a bucket name. */
 export function bucketCategory(name: BucketName): bigint {
   return BUCKET[name];
 }

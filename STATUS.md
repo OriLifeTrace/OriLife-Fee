@@ -1,73 +1,102 @@
-# STATUS — đo ngày 2026-07-30, lần đầu đưa thư mục này vào git
+# STATUS — measured 2026-08-21
 
-Thư mục này tồn tại từ trước nhưng **chưa từng nằm dưới git nào** (`git rev-parse` trả
-`fatal: not a git repository`). Commit đầu là để **chặn mất dữ liệu**, không phải để tuyên bố xong.
-File này ghi số ĐO ĐƯỢC, không ghi "test xanh".
+This directory existed for a long time but had **never been under any git repository**
+(`git rev-parse` returned `fatal: not a git repository`). The first commit was made to **stop
+losing work**, not to declare anything finished. This file records what was measured, not what
+was hoped.
 
-## Quy mô thật
+## Actual size
 
-23 file mã người viết, **1483 dòng** `.ts`. Tổng thư mục 202 MB, **toàn bộ là `node_modules/`** (đã
-`.gitignore`). Không có `.env`, không có khoá nào trong cây (đã soát trước khi `git add`).
+16 hand-written TypeScript files, **1671 lines**. Everything else in the directory is
+`node_modules/`, which is gitignored. There is no `.env` and no key anywhere in the tree; that was
+checked before the first `git add`.
 
-## Kiểm — XANH (đo lại 2026-08-20)
-
-```
-npx tsc --noEmit     → 0 lỗi
-npx vitest run       → 54 / 54 pass (4 tệp)
-```
-
-Trước đó `tsc` 1 lỗi và `vitest` 51/54, cả ba cùng gốc `src/treasuryClient.ts:66`
-(`CollectParams` thiếu `validFromMs`, `msPerEpoch`). Nguyên nhân thật không nằm ở tệp đó.
-
-**Kho này nhập thẳng mã LAMP qua đường dẫn tương đối leo ra ngoài gốc kho** (`../../../LAMP/...`,
-12 chỗ). Nghĩa là nó biên dịch với BẤT KỲ commit nào LAMP đang ở trên đĩa người chạy. LAMP đổi
-giao diện `custody` từ 2 sang 3 tham số ngày 15/06 (`8e485b3`), nên từ hôm đó kho này đỏ trên mọi
-máy — mà thông điệp lỗi lại nói về `CollectParams` chứ không nói về commit. Ba lỗi đỏ là một triệu
-chứng của việc **không ghim phụ thuộc**, không phải một lỗi mã.
-
-Vá: `scripts/pin-lamp.sh` dựng `vendor/lamp` là bản LAMP ghim đúng commit `ebafc2e` — commit CUỐI
-CÙNG còn khớp blueprint `vendor/treasury-custody.plutus.json`, tức khớp custody instance đã dựng
-trên Preview. `vendor/lamp/` nằm trong `.gitignore`: ghim commit, không chép mã của kho khác vào
-kho này.
-
-## Custody Preview còn sống — đã đo
-
-Câu treo từ 30/07 ("chưa kiểm địa chỉ đó còn UTxO thật hay chỉ genesis") nay có câu trả lời.
-Blockfrost Preview, `addresses/addr_test1wzz0uxpt58vllu2patcldqa7dvgwkr2j5yagcs8s9lmh37gq34gs9`,
-đo 20/08:
+## Checks — green (measured 2026-08-21)
 
 ```
-lovelace                12.000.000
-28e916b0…4c414d50 (LAMP) 19.500.000
-+ 3 NFT (tres-resev, treasury-lamp, …)
+npx tsc --noEmit                                  → 0 errors      (needs vendor/lamp)
+npx vitest run                                    → 57 / 57 pass, 4 files
+npx tsc --noEmit -p tsconfig.core.json            → 0 errors      (no LAMP needed)
+npx vitest run tests/feeEngine.test.ts \
+               tests/bridge.test.ts \
+               tests/custodyAddress.test.ts       → 54 / 54 pass, 3 files
 ```
 
-Nhiều UTxO, có inline datum `orilife-fee-v1` với sổ bucket ba dòng. **Địa chỉ đó đang giữ tài sản
-thật.** Suy ra: dựng lại blueprint theo LAMP mới là đổi script hash, tức đổi địa chỉ, tức mất khả
-năng chi tiêu chỗ tài sản đó. Đó là lý do ghim, không phải sở thích.
+The second pair is what CI runs, because CI has no copy of LAMP. The difference between the two —
+`tests/emulator.integration.test.ts`, three tests — is the honest measure of what the gate does not see.
 
-## `scripts/rebuild-blueprint.sh` đã bị XOÁ
+Before the pin existed, `tsc` reported 1 error and `vitest` 51/54, all three tracing back to
+`src/treasuryClient.ts:66` (`CollectParams` missing `validFromMs`, `msPerEpoch`). The real cause
+was not in that file.
 
-Nó `cp` blueprint từ LAMP ở HEAD bất kỳ, ghi đè bản đang khớp, rồi **thoát 0 như thể thành công**.
-Thay bằng `scripts/pin-lamp.sh`, làm đúng việc ngược lại: ghim, và từ chối nếu không ghim được.
+**This repository used to import LAMP source through relative paths that climbed out of its own
+root** (`../../../LAMP/...`, 12 of them). That means it compiled against whatever commit LAMP
+happened to be sitting on, on whoever's disk. LAMP changed the `custody` interface from 2 to 3
+parameters on 2026-06-15 (`8e485b3`), so from that day on this repository was red on every machine
+— while the error message talked about `CollectParams` and never mentioned a commit. Three red
+checks were one symptom of **an unpinned dependency**, not three code defects.
 
-## Còn phải làm
+The fix: `scripts/pin-lamp.sh` materialises `vendor/lamp` from LAMP at exactly commit `ebafc2e1`,
+the LAST commit that still matches the blueprint in `vendor/treasury-custody.plutus.json` — that
+is, matches the custody instance already deployed on Preview. The script pins by the full 40-char
+hash and then verifies by *content* (it greps for the 2-parameter validator signature), because a
+short name alone can resolve to a branch or tag in some other repository. `vendor/lamp/` is
+gitignored: this repository pins another repository's commit, it does not copy that repository's
+code into itself.
 
-1. Lớp cầu nối (`src/treasuryClient.ts`, `e2e/`, `scripts/*_preview.ts`) chỉ biên dịch được khi có
-   kho LAMP trên đĩa. Phần lõi (`feeEngine`, `bridge`, `buckets`, `tasks`) không cần LAMP. Kho công
-   khai mà lớp cầu nối cần một kho riêng tư là một ràng buộc thật, phải nói ra trong README chứ
-   không để người ngoài tự vấp.
-2. `src/tasks.ts:28` tự khai danh mục giá là `PLACEHOLDER mô phỏng`. Danh mục phí đang chạy thật là
+## The Preview custody instance still holds assets — measured
+
+Address `addr_test1wzz0uxpt58vllu2patcldqa7dvgwkr2j5yagcs8s9lmh37gq34gs9`, read from Blockfrost
+Preview on 2026-08-21:
+
+```
+lovelace                                       12,000,000
+28e916b0…4c414d50   (LAMP)                     19,500,000
+b1474a77…744c414d50 (tLAMP)                   120,000,000
+c123bdfb…744c414d50 (tLAMP, other policy)       1,000,000
+0c2ab8cf…747265732d7265736576 (tres-resev)              1
+171350413…74726561737572792d6c616d70 (treasury-lamp)    1
+```
+
+Two of those are NFTs (quantity 1); three are fungible batches under three different policy IDs,
+only the first of which is the LAMP this repository prices in. Several UTxOs, one of them carrying
+an inline datum with `instance_id = orilife-fee-v1` and a three-line bucket ledger.
+
+**That address holds real assets.** It follows that rebuilding the blueprint against a newer LAMP
+changes the script hash, which changes the address, which means losing the ability to spend what
+is sitting there. That is the reason for the pin — not a preference.
+
+`tests/custodyAddress.test.ts` turns this into a check that runs without LAMP: it derives the
+address from the vendored blueprint and fails if it stops matching `scripts/deployed_preview.json`.
+
+## `scripts/rebuild-blueprint.sh` has been DELETED
+
+It copied the blueprint from LAMP at whatever HEAD was checked out, overwrote the one that
+matched, and then **exited 0 as if it had succeeded**. It is replaced by `scripts/pin-lamp.sh`,
+which does the opposite: it pins, and it refuses if it cannot pin.
+
+Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-TECH.md` and
+`-EXEC.md` still tell the reader to run the deleted script. Those two lines are wrong.
+
+## Still open
+
+1. The bridge layer (`src/treasuryClient.ts`, `e2e/`, `scripts/*_preview.ts`) only compiles with
+   the LAMP repository on disk. The core layer (`feeEngine`, `bridge`, `buckets`, `tasks`) needs
+   nothing. A public repository whose bridge layer needs a private repository is a real
+   constraint, and the README says so up front rather than letting an outsider discover it by
+   failing.
+2. `src/tasks.ts:28` declares its own price catalogue to be a `PLACEHOLDER`. The fee catalogue
+   actually running in production is
    `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
-3. Hai thế hệ mã phí cùng nằm trong kho này (`main` dùng lại LAMP Treasury Collect trên Preview;
-   nhánh `claude/hop-dong-phi-carp-preprod` tự viết validator CARP trên Preprod). Chưa tệp nào nói
-   cái nào là hiện hành.
+3. Two generations of fee code live in this repository: `main` reuses the LAMP Treasury Collect
+   layer on Preview, while the branch `claude/hop-dong-phi-carp-preprod` carries a purpose-written
+   CARP validator on Preprod. Nothing in the tree states which one is current.
 
-## Quan hệ với MCR
+## Relationship to MCR
 
-**Không có.** Đây là hệ phí/kế toán, không đụng nhận-diện cây. Câu "nhất quán với MCR chưa" không
-áp cho thư mục này. Nhà thật của catalog phí đang chạy production là
-`orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`, **không phải** `src/tasks.ts` ở
-đây — grep toàn `orilife-core` không có caller nào trỏ sang thư mục này.
+**None.** This is the fee and accounting layer; it does not touch tree recognition. The production
+home of the live fee catalogue is
+`orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`, **not** `src/tasks.ts` here —
+grepping all of `orilife-core` finds no caller pointing at this directory.
 
 OriLife agent

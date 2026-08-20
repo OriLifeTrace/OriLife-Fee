@@ -1,53 +1,72 @@
 #!/usr/bin/env bash
-# Dựng `vendor/lamp` — bản LAMP GHIM ĐÚNG MỘT COMMIT mà kho này biên dịch được.
+# Materialise `vendor/lamp` — LAMP PINNED TO EXACTLY ONE COMMIT, the one this repository compiles
+# against.
 #
-# Vì sao phải ghim, và vì sao đây là tệp thay cho `rebuild-blueprint.sh` cũ:
+# Why pin at all, and why this file replaced the old `rebuild-blueprint.sh`:
 #
-# Kho này nhập thẳng bộ dựng giao dịch của LAMP Treasury. Trước đây đường nhập là
-# `../../../LAMP/...` — tức là biên dịch với BẤT KỲ commit nào LAMP đang ở trên đĩa người chạy.
-# LAMP đổi giao diện `custody` từ 2 sang 3 tham số ngày 15/06 (`8e485b3`), nên từ hôm đó kho này
-# đỏ trên mọi máy, mà thông điệp lỗi lại nói về `CollectParams` chứ không nói về commit.
+# This repository imports LAMP Treasury's transaction builder directly. The import path used to be
+# `../../../LAMP/...`, i.e. it compiled against whatever commit LAMP happened to be sitting on in
+# the reader's checkout. LAMP changed the `custody` interface from 2 to 3 parameters on 2026-06-15
+# (`8e485b3`), so from that day this repository was red on every machine — while the error message
+# talked about `CollectParams` rather than about a commit.
 #
-# Ghim vào đâu, và vì sao đúng chỗ đó: `LAMP_PIN` dưới đây là commit CUỐI CÙNG còn khớp với
-# blueprint trong `vendor/treasury-custody.plutus.json`, tức khớp với custody instance ĐÃ DỰNG
-# trên Preview ở `scripts/deployed_preview.json`. Địa chỉ đó đang giữ tài sản thật (đo 20/08:
-# 12 ADA, 19,5 triệu LAMP, 3 NFT). Biên dịch theo LAMP mới hơn là dựng giao dịch cho một script
-# hash khác, tức là mất khả năng chi tiêu chỗ tài sản đó.
+# Which commit, and why that one: `LAMP_PIN` below is the LAST commit that still matches the
+# blueprint in `vendor/treasury-custody.plutus.json`, i.e. matches the custody instance already
+# deployed on Preview and recorded in `scripts/deployed_preview.json`. That address holds real
+# assets (measured 2026-08-20: 12 ADA and 19,500,000 LAMP). Compiling against a newer LAMP means
+# building transactions for a different script hash — that is, losing the ability to spend what is
+# sitting at that address.
 #
-# Tệp cũ `rebuild-blueprint.sh` làm ngược lại: nó `cp` blueprint từ LAMP ở HEAD bất kỳ, ghi đè
-# bản đang khớp, rồi THOÁT 0 như thể thành công. Nó đã bị xoá.
+# The old `rebuild-blueprint.sh` did the opposite: it copied the blueprint from LAMP at whatever
+# HEAD was, overwrote the matching one, and EXITED 0 as if it had succeeded. It has been deleted.
 #
-# Dùng:  ./scripts/pin-lamp.sh          (LAMP mặc định ở kho anh em cạnh thư mục này)
-#        LAMP_REPO=/đường/dẫn/khác ./scripts/pin-lamp.sh
+# Read-only, on purpose: this uses `git archive` rather than `git worktree add`, so nothing is ever
+# written into the LAMP repository (a worktree registers metadata under LAMP/.git/worktrees and
+# leaves a stale entry that breaks the next run).
+#
+# Usage:  ./scripts/pin-lamp.sh          (LAMP defaults to a sibling of this repository)
+#         LAMP_REPO=/some/other/path ./scripts/pin-lamp.sh
 set -euo pipefail
 
-LAMP_PIN="ebafc2e"                       # xem lý do ở phần đầu tệp
+# The FULL 40-character hash, not a 7-character prefix. A short name can resolve to a branch, a
+# tag, or a different object entirely in a fork that rewrote history — and the check further down
+# would not notice, because it asks the same repository that just answered.
+LAMP_PIN="ebafc2e1ed6895e741e9febf0d66b62f7873d2ab"
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 DEST="$ROOT/vendor/lamp"
 LAMP_REPO="${LAMP_REPO:-$(cd "$ROOT/../.." && pwd)/LAMP}"
 
 if [ ! -d "$LAMP_REPO/.git" ]; then
-  echo "Không thấy kho LAMP ở '$LAMP_REPO'." >&2
-  echo "Kho này biên dịch được lớp cầu nối chỉ khi có LAMP trên đĩa. Đặt LAMP_REPO trỏ đúng chỗ," >&2
-  echo "hoặc bỏ qua bước này: phần lõi (feeEngine, bridge, buckets, tasks) không cần LAMP." >&2
+  echo "No LAMP repository at '$LAMP_REPO'." >&2
+  echo "The bridge layer only compiles with LAMP on disk. Point LAMP_REPO at it," >&2
+  echo "or skip this step: the core (feeEngine, bridge, buckets, tasks) does not need LAMP." >&2
   exit 2
 fi
 
 FULL="$(git -C "$LAMP_REPO" rev-parse --verify "${LAMP_PIN}^{commit}" 2>/dev/null || true)"
-if [ -z "$FULL" ]; then
-  echo "Kho LAMP ở '$LAMP_REPO' không có commit $LAMP_PIN — fetch rồi chạy lại." >&2
+if [ "$FULL" != "$LAMP_PIN" ]; then
+  echo "The LAMP repository at '$LAMP_REPO' does not contain commit $LAMP_PIN — fetch and retry." >&2
   exit 3
 fi
 
-if [ -e "$DEST" ]; then
-  git -C "$LAMP_REPO" worktree remove --force "$DEST" 2>/dev/null || rm -rf "$DEST"
-fi
-git -C "$LAMP_REPO" worktree add --detach "$DEST" "$FULL" >/dev/null
+rm -rf "$DEST"
+mkdir -p "$DEST"
+git -C "$LAMP_REPO" archive "$FULL" | tar -x -C "$DEST"
 
-GOT="$(git -C "$DEST" rev-parse HEAD)"
-if [ "$GOT" != "$FULL" ]; then
-  echo "Dựng xong nhưng commit không khớp: mong $FULL, được $GOT." >&2
+# Verify by CONTENT, not by name. `git archive` strips the history, so there is no HEAD to compare
+# against; the check that matters is that this really is the custody interface the vendored
+# blueprint was built from — two parameters, not three.
+CUSTODY="$DEST/Treasury/onchain/validators/custody.ak"
+if [ ! -f "$CUSTODY" ]; then
+  echo "Extracted tree has no $CUSTODY — this is not the LAMP repository." >&2
   exit 4
 fi
-echo "vendor/lamp đã ghim ở $LAMP_PIN ($GOT)."
+if ! grep -q 'validator custody(proposal_policy: assets.PolicyId, ms_per_epoch: Int)' "$CUSTODY"; then
+  echo "custody.ak does not have the expected 2-parameter signature. Either LAMP_REPO points at" >&2
+  echo "something else, or $LAMP_PIN is no longer the commit that matches the vendored blueprint." >&2
+  exit 5
+fi
+
+echo "vendor/lamp pinned at $FULL (verified by content: custody takes 2 parameters)."
