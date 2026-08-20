@@ -1,0 +1,20 @@
+{
+  "network": "Preprod",
+  "wallet": "addr_test1qrqzj0xdt0gxr4vsxscwyef9nzwpe06sgx5cm4khut9xz58y0qah7hsadf9kfzn3yn5pq6raul02jnjn7x30a8gtyafqfzdt7v",
+  "operatorKeyHash": "c0293ccd5bd061d5903430e26525989c1cbf5041a98dd6d7e2ca6150",
+  "carpPolicy": "a756fbd62481650504f8344b3f039e6803fd2cff37a1d3d7da923872",
+  "carpName": "tCARP",
+  "carpUnit": "a756fbd62481650504f8344b3f039e6803fd2cff37a1d3d7da9238727443415250",
+  "mintTx": "48b81b72b9ecdefa2b96ca8e2db690c219e5b46b059f4ee75351b99359c8f827",
+  "escrowAddress": "addr_test1wrxwf3kr6xez849d0dywk7ka28sgkgk8x5laq6zgkd6cpkgmek4sr",
+  "escrowHash": "cce4c6c3d1b223d4ad7b48eb7add51e08b22c7353fd06848b37580d9",
+  "vaultAddress": "addr_test1wrxmzy4qjv2a8urrk6fy36ek6336qu82h685wzad6deqauctrwv0c",
+  "vaultHash": "cdb112a09315d3f063b69248eb36d463a070eabe8f470badd3720ef3",
+  "openTx": "c8eec3667655648a15238e9f6ebfee410dacfc98fd117a50c078cd31bfc56017",
+  "collectTx": "7c2e352ed0f9cb09a3c78c503aad584c33f75c06c64a10c600219deedde42367",
+  "collected": "1000000000000",
+  "skimTx": "8fa82b2f31ab5475b28da1910fef532af2183ca3d30ed15039dbaf7ecfa2db5d",
+  "skimmed": "100000000000",
+  "donateTx": "ddbb236268c4358628ae82eaf72c1d500ad0ed9c3b4617ebadae7dddbab47d3a",
+  "donatedLovelace": "1000000"
+}
