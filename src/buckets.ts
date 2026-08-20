@@ -1,6 +1,6 @@
 // OriLife — phân loại BUCKET treasury (category id trong sổ CustodyDatum).
 //
-// "Các treasury" trong yêu cầu của anh = các BUCKET kế toán bên trong MỘT custody
+// "Các treasury" ở đây = các BUCKET kế toán bên trong MỘT custody
 // instance OriLife (sổ ledger đa-asset × bucket — xem LAMP/Treasury types.ak). Một
 // giao dịch Collect duy nhất nạp LAMP vào nhiều bucket bằng nhiều CollectItem khác
 // `category`. Tách bucket theo MỤC ĐÍCH dòng tiền, không theo người trả:

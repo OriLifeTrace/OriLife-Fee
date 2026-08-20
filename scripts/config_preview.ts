@@ -1,5 +1,9 @@
-// Config Preview testnet cho orilife-fee scripts. Đọc cùng LAMP/.env (chia sẻ ví/key).
-// Dùng vendor/treasury-custody.plutus.json TƯƠI (LAMP committed plutus.json đang STALE).
+// Config Preview testnet cho orilife-fee scripts.
+//
+// Bí mật (khoá Blockfrost, seed ví) đọc từ BIẾN MÔI TRƯỜNG, hoặc từ `.env` của CHÍNH kho này.
+// Trước đây tệp này nạp `.env` của kho LAMP qua một đường dẫn tương đối leo ra ngoài gốc kho:
+// một kho đọc tệp bí mật của kho khác thì không ai soát được kho nào đang giữ gì, và đường dẫn
+// đó vỡ ngay khi ai đó đặt hai kho ở chỗ khác. `.env` đã nằm trong `.gitignore` (dòng 9).
 
 import dotenv from "dotenv";
 import {
@@ -13,9 +17,7 @@ import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Đọc LAMP/.env (4 cấp trên scripts/ = OriLifeTrace/../LAMP/.env)
-// __dirname = .../OriLifeTrace/orilife-fee/scripts → ../../../ = Projects/
-dotenv.config({ path: resolve(__dirname, "../../../LAMP/.env") });
+dotenv.config({ path: resolve(__dirname, "../.env") });
 
 export const NETWORK: Network = (process.env.NETWORK ?? "Preview") as Network;
 export const BLOCKFROST_URL = `https://cardano-${NETWORK.toLowerCase()}.blockfrost.io/api/v0`;
@@ -37,7 +39,10 @@ export function loadCustodyCompiledCode(): string {
   const v = json.validators.find((x) => x.title === "custody.custody.spend");
   if (!v) throw new Error("custody.custody.spend không thấy trong vendor blueprint.");
   if (!v.parameters || v.parameters.length !== 2) {
-    throw new Error("blueprint STALE (thiếu 2 params) — chạy scripts/rebuild-blueprint.sh.");
+    throw new Error(
+      "blueprint không còn 2 tham số — nó đã bị dựng lại theo bản LAMP mới hơn, và bản mới dựng ra "
+      + "script hash KHÁC, tức địa chỉ khác với custody đã deploy ở scripts/deployed_preview.json. "
+      + "Khôi phục tệp từ git, đừng dựng lại. Xem scripts/pin-lamp.sh.");
   }
   return v.compiledCode;
 }

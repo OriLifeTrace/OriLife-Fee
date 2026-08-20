@@ -10,8 +10,8 @@ import {
   makeLucid, custodyValidator,
   explorerTx, awaitTx, loadDeployed,
 } from "./config_preview.js";
-import { decodeCustodyDatum } from "../../../LAMP/Treasury/offchain/src/datum.js";
-import { ledgerGet } from "../../../LAMP/Treasury/offchain/src/collect.js";
+import { decodeCustodyDatum } from "../vendor/lamp/Treasury/offchain/src/datum.js";
+import { ledgerGet } from "../vendor/lamp/Treasury/offchain/src/collect.js";
 import { buildFeeCollectTx } from "../src/treasuryClient.js";
 import { quoteFee } from "../src/feeEngine.js";
 import { utf8ToHex, type BridgeConfig } from "../src/bridge.js";

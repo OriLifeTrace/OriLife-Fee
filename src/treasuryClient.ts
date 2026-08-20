@@ -6,9 +6,9 @@
 import { Data, type LucidEvolution, type UTxO, type Validator, type Network } from "@lucid-evolution/lucid";
 import {
   buildCollectTx, type CollectResult,
-} from "../../../LAMP/Treasury/offchain/src/collectBuilder.js";
-import { decodeCustodyDatum } from "../../../LAMP/Treasury/offchain/src/datum.js";
-import type { CollectItem as TreasuryCollectItem } from "../../../LAMP/Treasury/offchain/src/types.js";
+} from "../vendor/lamp/Treasury/offchain/src/collectBuilder.js";
+import { decodeCustodyDatum } from "../vendor/lamp/Treasury/offchain/src/datum.js";
+import type { CollectItem as TreasuryCollectItem } from "../vendor/lamp/Treasury/offchain/src/types.js";
 
 import type { FeeQuote } from "./feeEngine.js";
 import {

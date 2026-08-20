@@ -24,7 +24,7 @@ treasury, chứng minh bằng 1 giao dịch Collect qua validator Plutus `custod
 | `tests/bridge.test.ts` | 7 test cầu nối |
 | `tests/emulator.integration.test.ts` | 3 test giao dịch qua validator Plutus thật (gồm multi-collect) |
 | `vendor/treasury-custody.plutus.json` | Blueprint custody TƯƠI (vì committed LAMP plutus.json STALE) |
-| `scripts/rebuild-blueprint.sh` | Tái dựng blueprint từ nguồn LAMP (không đụng repo LAMP) |
+| `scripts/pin-lamp.sh` | Ghim `vendor/lamp` vào đúng commit LAMP khớp blueprint đã deploy (chỉ đọc kho LAMP) |
 
 ### Tài liệu (`OriLife-Specs/Fee/`)
 `FeeMechanism-CONTRACT.md` (xương sống), `-FEAT.md`, `-MATH.md`, `-TECH.md`, `-EXEC.md`.
@@ -82,7 +82,7 @@ qua 2 giao dịch.
 
 ## 5. Hướng deploy (testnet Preview)
 
-Xem TECH §6. Cần: ví Preview funded (tADA) + Blockfrost key (`MAGIC/.env BLOCKFROST_TOKEN_GREENSUN`)
+Xem TECH §6. Cần: ví Preview có tADA + một khoá Blockfrost Preview, cả hai đọc từ biến môi trường (`WALLET_SEED`, `BLOCKFROST_KEY`) — xem `scripts/config_preview.ts`
 + mint LAMP test + deploy custody instance `cut_bps=10000`. Lõi định giá + cầu nối dùng nguyên,
 chỉ thay emulator bằng provider Blockfrost + ví thật.
 

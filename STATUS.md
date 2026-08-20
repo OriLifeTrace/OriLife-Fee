@@ -9,44 +9,59 @@ File này ghi số ĐO ĐƯỢC, không ghi "test xanh".
 23 file mã người viết, **1483 dòng** `.ts`. Tổng thư mục 202 MB, **toàn bộ là `node_modules/`** (đã
 `.gitignore`). Không có `.env`, không có khoá nào trong cây (đã soát trước khi `git add`).
 
-## Kiểm — CHƯA XANH
+## Kiểm — XANH (đo lại 2026-08-20)
 
-- `npx tsc --noEmit`: **1 lỗi**
-  `src/treasuryClient.ts(66,36): error TS2345` — `CollectParams` thiếu `validFromMs`, `msPerEpoch`.
-- `npx vitest run`: **51 / 54 pass, 3 fail**, cả 3 fail trong `tests/emulator.integration.test.ts`,
-  cùng một gốc: `buildFeeCollectTx` tại `src/treasuryClient.ts:66`.
+```
+npx tsc --noEmit     → 0 lỗi
+npx vitest run       → 54 / 54 pass (4 tệp)
+```
 
-Ba lỗi này là **một** lỗi: client TS đã đi theo LAMP mới, blueprint đóng gói thì chưa.
+Trước đó `tsc` 1 lỗi và `vitest` 51/54, cả ba cùng gốc `src/treasuryClient.ts:66`
+(`CollectParams` thiếu `validFromMs`, `msPerEpoch`). Nguyên nhân thật không nằm ở tệp đó.
 
-## ⚠️ ĐỪNG CHẠY `scripts/rebuild-blueprint.sh`
+**Kho này nhập thẳng mã LAMP qua đường dẫn tương đối leo ra ngoài gốc kho** (`../../../LAMP/...`,
+12 chỗ). Nghĩa là nó biên dịch với BẤT KỲ commit nào LAMP đang ở trên đĩa người chạy. LAMP đổi
+giao diện `custody` từ 2 sang 3 tham số ngày 15/06 (`8e485b3`), nên từ hôm đó kho này đỏ trên mọi
+máy — mà thông điệp lỗi lại nói về `CollectParams` chứ không nói về commit. Ba lỗi đỏ là một triệu
+chứng của việc **không ghim phụ thuộc**, không phải một lỗi mã.
 
-Nó `cp "$TMP/plutus.json" "$ROOT/vendor/treasury-custody.plutus.json"` (dòng 26), build từ
-`/Users/ductiger/Projects/LAMP/Treasury/onchain` **ở HEAD hiện tại**, rồi ghi đè, và thoát 0.
+Vá: `scripts/pin-lamp.sh` dựng `vendor/lamp` là bản LAMP ghim đúng commit `ebafc2e` — commit CUỐI
+CÙNG còn khớp blueprint `vendor/treasury-custody.plutus.json`, tức khớp custody instance đã dựng
+trên Preview. `vendor/lamp/` nằm trong `.gitignore`: ghim commit, không chép mã của kho khác vào
+kho này.
 
-Đã đo, hai bên KHÁC nhau về số tham số:
+## Custody Preview còn sống — đã đo
 
-| validator | vendor `treasury-custody.plutus.json` | LAMP HEAD |
-|---|---|---|
-| `custody.spend` | **2** tham số: `proposal_policy`, `ms_per_epoch` | **3**: `proposal_policy`, **`seed_policy`**, `ms_per_epoch` (`validators/custody.ak:47-51`) |
-| `custody_seed.mint` | **2**: `genesis_ref`, `custody_script_hash` | **1**: `genesis_ref` (`validators/custody_seed.ak:64`) |
+Câu treo từ 30/07 ("chưa kiểm địa chỉ đó còn UTxO thật hay chỉ genesis") nay có câu trả lời.
+Blockfrost Preview, `addresses/addr_test1wzz0uxpt58vllu2patcldqa7dvgwkr2j5yagcs8s9lmh37gq34gs9`,
+đo 20/08:
 
-Đổi tham số là đổi mã biên dịch, tức đổi script hash, tức **đổi địa chỉ**. Bản trong `vendor/` là
-hiện vật DUY NHẤT còn khớp địa chỉ custody đã deploy trên Preview:
-`addr_test1wzz0uxpt58vllu2patcldqa7dvgwkr2j5yagcs8s9lmh37gq34gs9`
-(`scripts/deployed_preview.json`). Chạy script đó là mất khả năng chi tiêu UTxO đang nằm ở đó.
+```
+lovelace                12.000.000
+28e916b0…4c414d50 (LAMP) 19.500.000
++ 3 NFT (tres-resev, treasury-lamp, …)
+```
 
-Muốn dựng lại đúng bản này thì phải checkout LAMP về commit khớp 2 tham số rồi mới build, chứ
-không chạy script ở HEAD.
+Nhiều UTxO, có inline datum `orilife-fee-v1` với sổ bucket ba dòng. **Địa chỉ đó đang giữ tài sản
+thật.** Suy ra: dựng lại blueprint theo LAMP mới là đổi script hash, tức đổi địa chỉ, tức mất khả
+năng chi tiêu chỗ tài sản đó. Đó là lý do ghim, không phải sở thích.
+
+## `scripts/rebuild-blueprint.sh` đã bị XOÁ
+
+Nó `cp` blueprint từ LAMP ở HEAD bất kỳ, ghi đè bản đang khớp, rồi **thoát 0 như thể thành công**.
+Thay bằng `scripts/pin-lamp.sh`, làm đúng việc ngược lại: ghim, và từ chối nếu không ghim được.
 
 ## Còn phải làm
 
-1. Chốt: nâng client TS theo LAMP 3 tham số (rồi deploy custody MỚI), hay ghim LAMP về bản 2 tham
-   số để giữ instance đã deploy. Đây là quyết định, không phải lỗi cần vá.
-2. `scripts/deployed_preview.json` — chưa kiểm địa chỉ đó còn UTxO thật hay chỉ genesis. Cần khoá
-   Blockfrost Preview còn hiệu lực.
-3. Sửa `rebuild-blueprint.sh`: thêm cổng đối chiếu số tham số trước khi `cp`, và bắt ghim commit
-   LAMP tường minh thay vì lấy HEAD.
-4. `README.md:17` ghi "54 test", `AUDIT.md`/EXEC ghi "43 test" — hai số chỏi nhau, chọn một.
+1. Lớp cầu nối (`src/treasuryClient.ts`, `e2e/`, `scripts/*_preview.ts`) chỉ biên dịch được khi có
+   kho LAMP trên đĩa. Phần lõi (`feeEngine`, `bridge`, `buckets`, `tasks`) không cần LAMP. Kho công
+   khai mà lớp cầu nối cần một kho riêng tư là một ràng buộc thật, phải nói ra trong README chứ
+   không để người ngoài tự vấp.
+2. `src/tasks.ts:28` tự khai danh mục giá là `PLACEHOLDER mô phỏng`. Danh mục phí đang chạy thật là
+   `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
+3. Hai thế hệ mã phí cùng nằm trong kho này (`main` dùng lại LAMP Treasury Collect trên Preview;
+   nhánh `claude/hop-dong-phi-carp-preprod` tự viết validator CARP trên Preprod). Chưa tệp nào nói
+   cái nào là hiện hành.
 
 ## Quan hệ với MCR
 

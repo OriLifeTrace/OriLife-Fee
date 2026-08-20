@@ -1,0 +1,63 @@
+name: CI
+
+# Cổng chất lượng của kho này. Trước tệp này, `tsc` và `vitest` chỉ chạy bằng tay trên máy người
+# viết, và `main` đỏ suốt 21 ngày mà ngoài STATUS.md không chỗ nào nói vậy.
+#
+# Kho chạy trên gói GitHub Free và (trước 20/08) là kho riêng tư, nên branch protection trả 403.
+# Cổng thật vì thế phải nằm ở đây, không ở cấu hình kho. Kho công khai rồi thì bật thêm
+# `Require status checks` trỏ vào đúng hai job dưới đây.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Phần LÕI: định giá, cầu nối, bucket, danh mục tác vụ. Không cần kho LAMP, không cần mạng.
+  # Đây là phần người ngoài clone về chạy được, nên nó là cổng bắt buộc.
+  core:
+    name: Lõi (tsc + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # Lớp cầu nối nhập mã LAMP qua `vendor/lamp` (ghim commit, xem scripts/pin-lamp.sh) và kho
+      # đó không có mặt ở đây. Chỉ kiểm phần lõi, và NÓI RA là mình chỉ kiểm phần lõi — trần trụi
+      # hơn là để một cổng xanh ngụ ý nó đã phủ cả những thứ nó không chạm tới.
+      - run: npx tsc --noEmit -p tsconfig.core.json
+      - run: npx vitest run tests/feeEngine.test.ts tests/bridge.test.ts
+      - name: Chưa phủ những gì
+        run: |
+          echo "Job này KHÔNG phủ: src/treasuryClient.ts, e2e/, scripts/*_preview.ts."
+          echo "Chúng nhập mã LAMP qua vendor/lamp — cần kho LAMP trên đĩa, xem scripts/pin-lamp.sh."
+
+  # Hợp đồng Aiken. Chỉ chạy khi thư mục onchain/ có mặt trên nhánh đang kiểm: nó nằm ở nhánh
+  # CARP, không ở main.
+  onchain:
+    name: Hợp đồng (aiken check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: co
+        run: |
+          if [ -d onchain/orilife_treasury ]; then echo "co=yes" >> "$GITHUB_OUTPUT";
+          else echo "co=no" >> "$GITHUB_OUTPUT"; echo "Nhánh này không có onchain/ — bỏ qua."; fi
+      - if: steps.co.outputs.co == 'yes'
+        run: |
+          curl -sSfL https://install.aiken-lang.org | bash
+          echo "$HOME/.aiken/bin" >> "$GITHUB_PATH"
+      - if: steps.co.outputs.co == 'yes'
+        working-directory: onchain/orilife_treasury
+        run: aiken check

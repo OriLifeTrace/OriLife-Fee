@@ -2,7 +2,8 @@
 // Plutus custody THẬT trong Lucid Emulator. Đây là bằng chứng tự động mỗi `npm test`.
 //
 // Yêu cầu: vendor/treasury-custody.plutus.json (blueprint tươi). Nếu thiếu → chạy
-// scripts/rebuild-blueprint.sh (cần aiken). Test sẽ báo lỗi rõ nếu thiếu.
+// Blueprint đã nằm trong vendor/ và KHÔNG được dựng lại (dựng lại là đổi script hash, tức đổi
+// địa chỉ custody đã giữ tài sản thật). Test sẽ báo lỗi rõ nếu thiếu.
 
 import { describe, it, expect } from "vitest";
 import { runEmulatorCollect, runEmulatorMultiCollect, SEED_ADA } from "../e2e/harness.js";

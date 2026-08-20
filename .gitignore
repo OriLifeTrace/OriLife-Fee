@@ -23,3 +23,6 @@ _Agents/
 CLAUDE.md
 .claude/
 _wt-*
+
+# Bản LAMP ghim commit, dựng bằng scripts/pin-lamp.sh — KHÔNG commit mã của kho khác vào đây.
+vendor/lamp/

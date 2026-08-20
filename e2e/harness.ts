@@ -10,9 +10,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { custodyDatumToCbor, decodeCustodyDatum } from "../../../LAMP/Treasury/offchain/src/datum.js";
-import { ledgerGet } from "../../../LAMP/Treasury/offchain/src/collect.js";
-import type { CustodyDatum } from "../../../LAMP/Treasury/offchain/src/types.js";
+import { custodyDatumToCbor, decodeCustodyDatum } from "../vendor/lamp/Treasury/offchain/src/datum.js";
+import { ledgerGet } from "../vendor/lamp/Treasury/offchain/src/collect.js";
+import type { CustodyDatum } from "../vendor/lamp/Treasury/offchain/src/types.js";
 
 import { quoteFee, type QuoteInput, type FeeQuote } from "../src/feeEngine.js";
 import { buildFeeCollectTx } from "../src/treasuryClient.js";
@@ -55,13 +55,16 @@ interface Env {
 
 function loadCustodyCompiledCode(): string {
   // Blueprint TƯƠI (vendor) build lại từ custody.ak hiện tại — committed plutus.json của
-  // LAMP/Treasury đang STALE (thiếu params). Tái dựng: scripts/rebuild-blueprint.sh.
+  // Blueprint lấy từ vendor/, KHÔNG dựng lại từ LAMP HEAD: bản HEAD có 3 tham số, dựng ra script
+  // hash khác, tức địa chỉ khác với custody đã deploy. Xem scripts/pin-lamp.sh.
   const p = resolve(__dirname, "../vendor/treasury-custody.plutus.json");
   const json = JSON.parse(readFileSync(p, "utf8")) as { validators: { title: string; compiledCode: string; parameters?: unknown[] }[] };
   const v = json.validators.find((x) => x.title === "custody.custody.spend");
   if (!v) throw new Error("không thấy custody.custody.spend trong vendor blueprint.");
   if (!v.parameters || v.parameters.length !== 2) {
-    throw new Error("blueprint custody.custody.spend thiếu 2 params — chạy scripts/rebuild-blueprint.sh.");
+    throw new Error(
+      "blueprint custody.custody.spend không còn 2 tham số — nó đã bị dựng lại theo bản LAMP mới hơn. "
+      + "Khôi phục tệp từ git, đừng dựng lại. Xem scripts/pin-lamp.sh.");
   }
   return v.compiledCode;
 }

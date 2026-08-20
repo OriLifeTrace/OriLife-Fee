@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "node"
+    ],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "outDir": "dist"
+  },
+  "include": [
+    "src",
+    "tests"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "vendor",
+    "src/treasuryClient.ts",
+    "tests/emulator.integration.test.ts"
+  ],
+  "$comment": "Phần LÕI — không nhập gì từ vendor/lamp, nên clone về là biên dịch được ngay. Cổng CI dùng tệp này; tsconfig.json (đầy đủ) cần kho LAMP, xem scripts/pin-lamp.sh."
+}

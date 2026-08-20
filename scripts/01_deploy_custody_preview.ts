@@ -10,11 +10,11 @@ import {
   makeLucid, custodyValidator, custodyAddress,
   explorerTx, awaitTx, saveDeployed,
 } from "./config_preview.js";
-import { custodyDatumToCbor } from "../../../LAMP/Treasury/offchain/src/datum.js";
-import { seedDatumOk } from "../../../LAMP/Treasury/offchain/src/collect.js";
-import { assetsToMap } from "../../../LAMP/Treasury/offchain/src/collectBuilder.js";
+import { custodyDatumToCbor } from "../vendor/lamp/Treasury/offchain/src/datum.js";
+import { seedDatumOk } from "../vendor/lamp/Treasury/offchain/src/collect.js";
+import { assetsToMap } from "../vendor/lamp/Treasury/offchain/src/collectBuilder.js";
 import { utf8ToHex } from "../src/bridge.js";
-import type { CustodyDatum } from "../../../LAMP/Treasury/offchain/src/types.js";
+import type { CustodyDatum } from "../vendor/lamp/Treasury/offchain/src/types.js";
 
 const SEED_LOVELACE = 5_000_000n; // 5 ADA min-UTxO
 
