@@ -1,23 +1,24 @@
-// OriLife — lớp gọi LAMP Treasury SDK THẬT để dựng giao dịch Collect từ FeeQuote.
-// Import builder + datum codec của @magiclamp/treasury-sdk qua đường dẫn nguồn (file local).
+// OriLife — the layer that calls the REAL LAMP Treasury SDK to build a Collect transaction from
+// a FeeQuote. It imports the builder and datum codec of @magiclamp/treasury-sdk by source path.
 //
-// Tách khỏi bridge.ts (thuần, test không cần repo LAMP): chỉ file này + e2e chạm Treasury.
+// Kept separate from bridge.ts (which is pure and testable without the LAMP repository): only
+// this file and e2e/ touch the Treasury SDK.
 
 import { Data, type LucidEvolution, type UTxO, type Validator, type Network } from "@lucid-evolution/lucid";
 import {
   buildCollectTx, type CollectResult,
-} from "../../../LAMP/Treasury/offchain/src/collectBuilder.js";
-import { decodeCustodyDatum } from "../../../LAMP/Treasury/offchain/src/datum.js";
-import type { CollectItem as TreasuryCollectItem } from "../../../LAMP/Treasury/offchain/src/types.js";
+} from "../vendor/lamp/Treasury/offchain/src/collectBuilder.js";
+import { decodeCustodyDatum } from "../vendor/lamp/Treasury/offchain/src/datum.js";
+import type { CollectItem as TreasuryCollectItem } from "../vendor/lamp/Treasury/offchain/src/types.js";
 
 import type { FeeQuote } from "./feeEngine.js";
 import {
   quoteToCollectItems, assertBridgeInvariants, type BridgeConfig, type CollectItem,
 } from "./bridge.js";
 
-// B1: kiểm LÚC BIÊN DỊCH rằng CollectItem (mirror cục bộ ở bridge.ts) KHỚP TUYỆT ĐỐI
-// CollectItem THẬT của Treasury SDK. Nếu Treasury đổi field/kiểu → tsc lỗi ngay (không
-// để phép ép `as` che lệch câm rồi mới vỡ on-chain).
+// B1: a COMPILE-TIME check that CollectItem (the local mirror in bridge.ts) matches the REAL
+// Treasury SDK CollectItem exactly. If Treasury changes a field or a type, tsc fails here — rather
+// than an `as` cast hiding the drift until it breaks on-chain.
 type _ItemCompat = [CollectItem] extends [TreasuryCollectItem]
   ? ([TreasuryCollectItem] extends [CollectItem] ? true : never)
   : never;
@@ -27,7 +28,7 @@ void _itemCompat;
 export interface BuildFeeCollectParams {
   lucid: LucidEvolution;
   network: Network;
-  /** Custody UTxO của instance OriLife (inline CustodyDatum, cut_bps=10000). */
+  /** The custody UTxO of the OriLife instance (inline CustodyDatum, cut_bps = 10000). */
   custodyUtxo: UTxO;
   custodyScript: Validator;
   quote: FeeQuote;
@@ -40,23 +41,27 @@ export interface BuildFeeCollectResult extends CollectResult {
 }
 
 /**
- * FeeQuote → giao dịch Collect (chưa sign). Đọc cut_bps từ custody datum để KIỂM bất biến
- * cầu nối trước khi dựng (fail-fast). amount mỗi item = oil bucket; cut_bps=10000 ⇒ toàn bộ
- * vào treasury, chia về các bucket theo category.
+ * FeeQuote -> an unsigned Collect transaction. Reads cut_bps from the custody datum and CHECKS
+ * the bridge invariants before building anything (fail fast). Each item's amount is the bucket's
+ * oil; with cut_bps = 10000 the whole fee enters the treasury, split across buckets by category.
  */
 export async function buildFeeCollectTx(p: BuildFeeCollectParams): Promise<BuildFeeCollectResult> {
-  if (!p.custodyUtxo.datum) throw new Error("ORILIFE-TC-000: custody UTxO thiếu inline datum.");
+  if (!p.custodyUtxo.datum) {
+    throw new Error("ORILIFE-TC-000: the custody UTxO has no inline datum.");
+  }
   const datum = decodeCustodyDatum(Data.from(p.custodyUtxo.datum));
 
-  // B3: asset cấu hình phải ∈ accepted_assets của instance (lỗi rõ thay vì COLLECT-001 mơ hồ).
+  // B3: the configured asset must be in the instance's accepted_assets — a specific error here
+  // beats a vague COLLECT-001 later.
   const lampKey = `${p.cfg.lampPolicyHex.toLowerCase()}|${p.cfg.lampNameHex.toLowerCase()}`;
   const accepted = datum.accepted_assets.some(
     (a) => `${a.policy.toLowerCase()}|${a.name.toLowerCase()}` === lampKey,
   );
   if (!accepted) {
     throw new Error(
-      `BRIDGE-004: LAMP (${p.cfg.lampPolicyHex}.${p.cfg.lampNameHex}) ∉ accepted_assets của instance `
-        + `— sai cấu hình policy/name hoặc sai custody instance.`,
+      `BRIDGE-004: LAMP (${p.cfg.lampPolicyHex}.${p.cfg.lampNameHex}) is not in the instance's `
+        + `accepted_assets — either the policy/name config is wrong, or this is the wrong custody `
+        + `instance.`,
     );
   }
 

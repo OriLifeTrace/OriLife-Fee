@@ -1,0 +1,74 @@
+name: CI
+
+# The quality gate for this repository. Before this file existed, `tsc` and `vitest` only ever ran
+# by hand on the author's machine, and `main` stayed red for 21 days with nothing but STATUS.md
+# saying so.
+#
+# The repo runs on the GitHub Free plan and was private until 2026-08-20, so branch protection
+# returned 403 and the real gate had to live here rather than in the repo settings. Now that the
+# repo is public, `Require status checks` should point at the two job names below — and note that
+# the job NAME is the protection context, so renaming a job silently detaches the rule.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # The CORE layer: pricing, bridge, buckets, task catalogue. Needs neither the LAMP repository nor
+  # the network. This is the part an outsider can clone and run, so it is the mandatory gate.
+  core:
+    name: Core (tsc + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # The bridge layer imports LAMP code through `vendor/lamp` (a pinned commit — see
+      # scripts/pin-lamp.sh) and that repository is not present here. So this job checks the core
+      # only, and SAYS SO — blunter than letting a green check imply it covered things it never
+      # touched.
+      - run: npx tsc --noEmit -p tsconfig.core.json
+      - run: npx vitest run tests/feeEngine.test.ts tests/bridge.test.ts tests/custodyAddress.test.ts
+      - name: What this job does not cover
+        run: |
+          echo "NOT covered here: src/treasuryClient.ts, e2e/, scripts/*_preview.ts."
+          echo "They import LAMP code via vendor/lamp — needs the LAMP repo on disk."
+          echo "Covered instead by tests/custodyAddress.test.ts, which pins the deployed"
+          echo "custody address against the vendored blueprint without needing LAMP."
+
+  # Aiken contracts. Runs only when onchain/ is present on the branch being checked: it lives on
+  # the CARP branch, not on main.
+  onchain:
+    name: Contracts (aiken check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: present
+        run: |
+          if [ -d onchain/orilife_treasury ]; then echo "present=yes" >> "$GITHUB_OUTPUT";
+          else echo "present=no" >> "$GITHUB_OUTPUT"; echo "No onchain/ on this branch — skipping."; fi
+      # Pinned: the script hash depends on the compiler version. The blueprint currently in use was
+      # produced by Aiken v1.1.21 (read from the `preamble` of vendor/treasury-custody.plutus.json).
+      # A gate on a floating compiler goes red or green according to something outside this repo.
+      - if: steps.present.outputs.present == 'yes'
+        run: |
+          curl -sSfL https://install.aiken-lang.org | bash
+          export PATH="$HOME/.aiken/bin:$PATH"
+          aikup install v1.1.21
+          aiken --version | grep -q 'v1.1.21' || { echo "Wrong aiken version pinned"; exit 1; }
+          echo "$HOME/.aiken/bin" >> "$GITHUB_PATH"
+      - if: steps.present.outputs.present == 'yes'
+        working-directory: onchain/orilife_treasury
+        run: aiken check

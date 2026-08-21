@@ -1,102 +1,139 @@
-# AUDIT — orilife-fee (cơ chế phí OriLife → treasury)
+# AUDIT — orilife-fee (OriLife task fees → treasury)
 
-**Ngày:** 2026-06-09
-**Phạm vi:** Lõi định giá phí tác vụ người dùng OriLife + cầu nối nạp LAMP về các bucket
-treasury, chứng minh bằng 1 giao dịch Collect qua validator Plutus `custody.custody.spend` thật.
+**Built:** 2026-06-09 · **Re-measured and corrected:** 2026-08-21
+**Scope:** the pricing core for OriLife user task fees, plus the bridge that deposits the
+resulting LAMP into treasury buckets, demonstrated by one real Collect transaction through the
+`custody.custody.spend` Plutus validator.
 
 ---
 
-## 1. File đã tạo
+## 1. What is in the repository
 
 ### Code (`orilife-fee/`)
-| File | Vai trò |
+| File | Role |
 |---|---|
-| `src/params.ts` | Hằng số kinh tế DAO-governed + biên an toàn (lampUsd, cut, resource split, cap) |
-| `src/buckets.ts` | Phân loại bucket treasury (PROTOCOL/LAMPNET_REWARD/ANCHOR ↔ category 0/1/2) |
-| `src/tasks.ts` | Danh mục 9 tác vụ + hồ sơ định giá + DAO setter có biên |
-| `src/feeEngine.ts` | `quoteFee` (định giá), `splitOil` (chia bucket), `demandFactorFromSignals`, `DemandController` |
-| `src/bridge.ts` | `quoteToCollectItems`, `assertBridgeInvariants`, `utf8ToHex` — interface contract → Treasury |
-| `src/treasuryClient.ts` | `buildFeeCollectTx` — gọi LAMP Treasury `buildCollectTx` thật |
+| `src/params.ts` | DAO-governed economic constants plus their safety bounds (lampUsd, cut, resource split, caps) |
+| `src/buckets.ts` | Treasury bucket taxonomy (PROTOCOL / LAMPNET_REWARD / ANCHOR ↔ category 0/1/2) |
+| `src/tasks.ts` | Catalogue of 9 tasks, their pricing profiles, and bounded DAO setters |
+| `src/feeEngine.ts` | `quoteFee` (pricing), `splitOil` (bucket split), `demandFactorFromSignals`, `DemandController` |
+| `src/bridge.ts` | `quoteToCollectItems`, `assertBridgeInvariants`, `utf8ToHex` — the interface contract into Treasury |
+| `src/treasuryClient.ts` | `buildFeeCollectTx` — calls LAMP Treasury's real `buildCollectTx` |
 | `src/index.ts` | Barrel export |
-| `e2e/harness.ts` | Harness emulator tái dùng (1 + N collect qua validator thật) |
-| `e2e/collect_emulator.ts` | Script in ấn bằng chứng |
-| `tests/feeEngine.test.ts` | 44 test định giá + bảo toàn + biên DAO + bigint |
-| `tests/bridge.test.ts` | 7 test cầu nối |
-| `tests/emulator.integration.test.ts` | 3 test giao dịch qua validator Plutus thật (gồm multi-collect) |
-| `vendor/treasury-custody.plutus.json` | Blueprint custody TƯƠI (vì committed LAMP plutus.json STALE) |
-| `scripts/rebuild-blueprint.sh` | Tái dựng blueprint từ nguồn LAMP (không đụng repo LAMP) |
+| `e2e/harness.ts` | Reusable emulator harness (1 collect and N collects through the real validator) |
+| `e2e/collect_emulator.ts` | Prints the evidence |
+| `tests/feeEngine.test.ts` | 44 tests: pricing, conservation, DAO bounds, bigint behaviour |
+| `tests/bridge.test.ts` | 7 tests: the bridge contract |
+| `tests/custodyAddress.test.ts` | 3 tests: the vendored blueprint still derives the deployed address |
+| `tests/emulator.integration.test.ts` | 3 tests: real transactions through the Plutus validator, including multi-collect |
+| `vendor/treasury-custody.plutus.json` | The custody blueprint this repository is pinned to |
+| `scripts/pin-lamp.sh` | Materialises `vendor/lamp` at the LAMP commit matching that blueprint (reads LAMP, never writes to it) |
 
-### Tài liệu (`OriLife-Specs/Fee/`)
-`FeeMechanism-CONTRACT.md` (xương sống), `-FEAT.md`, `-MATH.md`, `-TECH.md`, `-EXEC.md`.
-
----
-
-## 2. Logic chính
-
-1. **Định giá** (`feeEngine.quoteFee`): phí USD = `(base + valueAdd) × demand × anchorTier ×
-   eventMult`, kẹp `≤ min(0.5×truyền_thống, 100 USD)`; quy đổi USD→oil bằng **bigint thuần**
-   (tất định, không tràn float). Chia về 3 bucket, ANCHOR hấp thụ dư ⇒ `Σ bucket = feeOil`.
-2. **Cầu nối** (`bridge` + `treasuryClient`): FeeQuote → `CollectItem[]` (mỗi bucket 1 item,
-   `category` = bucket, `amount` = oil). Kiểm bất biến (cut_bps=10000, Σ khớp, asset ∈ accepted)
-   trước khi gọi `buildCollectTx`.
-3. **On-chain**: instance custody OriLife `cut_bps=10000` ⇒ `cut = amount` ⇒ toàn bộ phí vào
-   treasury, chia 3 bucket trong 1 giao dịch (1 custody in/out). Validator `custody.ak` nhánh
-   Collect ép C-MINT-0/C-COL-1..5 (không đốt, Σout=Σin, sổ += Σcut đúng bucket).
+### Documentation (`OriLife-Specs/Fee/`)
+`FeeMechanism-CONTRACT.md` (the backbone), `-FEAT.md`, `-MATH.md`, `-TECH.md`, `-EXEC.md`.
 
 ---
 
-## 3. Phản biện (2 nhóm agent red-team) + xử lý
+## 2. How it works
 
-| ID | Mức | Phát hiện | Xử lý |
+1. **Pricing** (`feeEngine.quoteFee`): fee in USD = `(base + valueAdd) × demand × anchorTier ×
+   eventMult`, clamped to `≤ min(0.5 × traditional cost, 100 USD)`; the USD→oil conversion is
+   **pure bigint** (deterministic, no float overflow). The result is split across 3 buckets, with
+   ANCHOR absorbing the remainder so that `Σ buckets = feeOil` exactly.
+2. **Bridge** (`bridge` + `treasuryClient`): a FeeQuote becomes `CollectItem[]` — one item per
+   bucket, `category` = bucket, `amount` = oil. Invariants are checked (cut_bps = 10000, sums
+   match, asset ∈ accepted) before `buildCollectTx` is called.
+3. **On-chain**: the OriLife custody instance runs `cut_bps = 10000`, so `cut = amount` and the
+   entire fee lands in the treasury, split three ways inside a single transaction (one custody
+   input, one custody output). The Collect branch of `custody.ak` enforces C-MINT-0 and
+   C-COL-1..5: nothing burned, `Σout = Σin`, and the ledger increases by `Σcut` in the right
+   bucket.
+
+---
+
+## 3. Red-team findings and what was done about them
+
+Two independent red-team passes. The "Status" column says what the code actually does today, not
+what was intended.
+
+| ID | Severity | Finding | Status |
 |---|---|---|---|
-| H-1 | Cao | `demandFactor` nhận từ client → ghim 0.5 trả phí tối thiểu; EMA không wire | Đánh dấu TRUSTED SERVER INPUT + thêm `DemandController` (nguồn server); tầng API phải chặn field từ client (ghi rõ) |
-| H-2 | Cao | Tín hiệu MAGIC consumed/generated không xác thực | DEFER v1.1 (wire oracle MAGIC AppEconomics) — ghi gap trong EXEC |
-| H-3 | Cao | `feeOil` tính qua float64 → phi-tất-định + mất chính xác >2⁵³ | **SỬA**: chuyển sang bigint thuần (`feeUsdMicro × OIL / lampUsdMicro`) |
-| M-1 | Trung | DAO setter thiếu biên → DoS (lampUsd≈0) / phí âm | **SỬA**: `daoSetLampUsd` kẹp [10⁻⁶,10⁶]; `daoSetTask` ép field ≥0 + valueBps ≤ 1000 |
-| M-2 | Trung | Cap neo vào traditionalCost tự khai → tautology | **SỬA**: thêm trần tuyệt đối `MAX_FEE_USD_ABSOLUTE=100` |
-| M-3 | Trung | `RESOURCE_SPLIT_BPS.anchor` không dùng; split lệch không báo | **SỬA**: `assertResourceSplitSound()` ép Σ=10000 lúc load |
-| L-1 | Thấp | client hạ `anchorTier` về no_anchor né phí neo | **SỬA**: tác vụ on-chain khoá tier ≥ defaultAnchorTier |
-| L-2 | Thấp | `feeOil=0` → tác vụ miễn phí lọt | **SỬA**: sàn `MIN_FEE_OIL=1000` khi feeUsd>0 |
-| L-3 | Thấp | cut_bps=10000 chỉ ép off-chain | Ghi rõ trong CONTRACT: deploy phải verify cut_bps; mọi đường qua `assertBridgeInvariants` |
-| B1 | Trung | mirror `CollectItem` ép `as` che lệch type câm | **SỬA**: assertion type-equality lúc biên dịch (`_ItemCompat`) |
-| B2 | Trung | thiếu test multi-collect (nhánh sổ incremental) | **SỬA**: `runEmulatorMultiCollect` + test 2 collect qua validator thật |
-| B3 | Thấp | không kiểm asset ∈ accepted_assets | **SỬA**: `BRIDGE-004` trong `buildFeeCollectTx` |
+| H-1 | High | `demandFactor` arrives as an argument, so a caller could pin it to 0.5 and pay the minimum; the EMA is not wired | **PARTIAL.** The field is documented as TRUSTED SERVER INPUT and `DemandController` exists as a server-side source — but nothing outside `src/feeEngine.ts` and its own tests calls it, so today the guarantee rests entirely on the API layer rejecting the field. That layer is not in this repository. |
+| H-2 | High | MAGIC consumed/generated signals are unauthenticated | **DEFERRED to v1.1** (wire the MAGIC AppEconomics oracle). Recorded as a gap in `-EXEC.md`. |
+| H-3 | High | `feeOil` went through float64 → non-deterministic, and lossy above 2⁵³ | **FIXED**: pure bigint (`feeUsdMicro × OIL / lampUsdMicro`). |
+| M-1 | Medium | Unbounded DAO setters → denial of service (lampUsd ≈ 0) or negative fees | **FIXED**: `daoSetLampUsd` clamps to [10⁻⁶, 10⁶]; `daoSetTask` forces fields ≥ 0 and valueBps ≤ 1000. |
+| M-2 | Medium | The cap was anchored to a self-declared traditionalCost — a tautology | **FIXED**: added the absolute ceiling `MAX_FEE_USD_ABSOLUTE = 100`. |
+| M-3 | Medium | `RESOURCE_SPLIT_BPS.anchor` was unused, and a skewed split was silent | **FIXED**: `assertResourceSplitSound()` enforces Σ = 10000 at load time. |
+| L-1 | Low | A caller could downgrade `anchorTier` to no_anchor to dodge the anchoring fee | **FIXED**: on-chain tasks lock the tier at ≥ defaultAnchorTier. |
+| L-2 | Low | `feeOil = 0` let a task through free | **FIXED**: floor `MIN_FEE_OIL = 1000` whenever feeUsd > 0. |
+| L-3 | Low | cut_bps = 10000 was only enforced off-chain | Documented in CONTRACT: deployment must verify cut_bps, and every path goes through `assertBridgeInvariants`. |
+| B1 | Medium | The mirrored `CollectItem` used `as`, which would hide a type drift silently | **FIXED**: compile-time type-equality assertion (`_ItemCompat`). |
+| B2 | Medium | No multi-collect test, so the incremental-ledger branch was untested | **FIXED**: `runEmulatorMultiCollect` plus a 2-collect test through the real validator. |
+| B3 | Low | The asset was not checked against accepted_assets | **FIXED**: `BRIDGE-004` in `buildFeeCollectTx`. |
 
-Trục được xác nhận AN TOÀN (không sửa): bảo toàn Σ=feeOil (chứng minh MATH §5), floor chống
-khai thấp, `utf8ToHex`, `itemCut(_,10000)=amount`, không rò rỉ thứ tự iteration.
+Axes examined and found sound, with no change made: conservation `Σ = feeOil` (proved in MATH §5),
+the floor against under-declaring, `utf8ToHex`, `itemCut(_, 10000) = amount`, and no dependence on
+iteration order.
+
+### Found later, by review of the pull request itself
+
+- **The CI gate does not cover the money-spending layer.** `tsconfig.core.json:29-30` excludes
+  `src/treasuryClient.ts`, and CI cannot run the emulator tests without LAMP. This was proved by
+  deliberately breaking that file: the two steps of the `core` job still returned exit 0 and
+  51 passed. Partly closed by `tests/custodyAddress.test.ts`, which pins the deployed address
+  without needing LAMP. The rest is stated openly in the job output rather than papered over.
+- **`scripts/02_collect_preview.ts` used to check its invariants after submitting**, and compared
+  a *cumulative* ledger against a *single* quote — so the next run would always have thrown after
+  the money had already moved. Now it checks before submitting, reconciles by delta, and its
+  failure message says plainly that the transaction has already settled and must not be re-run.
+- **`scripts/pin-lamp.sh` used to pin by a 7-character name and verify itself in a circle**, and
+  it registered a worktree inside the LAMP repository. It now pins by the full 40-character hash,
+  verifies by content, and uses `git archive`, which leaves the source repository untouched.
 
 ---
 
-## 4. Test coverage / bằng chứng
+## 4. Evidence
 
 ```
-npx tsc --noEmit   → sạch
-npm test           → 54 test PASS (44 feeEngine + 7 bridge + 3 emulator integration)
-npm run e2e:emulator → giao dịch Collect qua validator Plutus thật, 8 bất biến ✅, txHash thật
+npx tsc --noEmit                          → clean (needs vendor/lamp)
+npm test                                  → 57 tests pass, 4 files
+npm run e2e:emulator                      → one real Collect through the Plutus validator,
+                                            8 invariants, a real txHash
 ```
-Integration test chạy giao dịch THẬT qua `custody.custody.spend` trong Lucid Emulator (không
-cần ví/faucet/Blockfrost): nạp phí LAMP về 3 bucket, value bảo toàn Σout=Σin, sổ cộng dồn đúng
-qua 2 giao dịch.
+
+The integration tests run real transactions through `custody.custody.spend` in the Lucid Emulator,
+with no wallet, faucet, or Blockfrost needed: the LAMP fee is deposited into 3 buckets, value is
+conserved (`Σout = Σin`), and the ledger accumulates correctly across 2 transactions.
+
+What CI runs is the narrower LAMP-free subset — see `STATUS.md` for both numbers side by side.
 
 ---
 
-## 5. Hướng deploy (testnet Preview)
+## 5. Deploying to Preview
 
-Xem TECH §6. Cần: ví Preview funded (tADA) + Blockfrost key (`MAGIC/.env BLOCKFROST_TOKEN_GREENSUN`)
-+ mint LAMP test + deploy custody instance `cut_bps=10000`. Lõi định giá + cầu nối dùng nguyên,
-chỉ thay emulator bằng provider Blockfrost + ví thật.
+See TECH §6. You need a Preview wallet holding tADA and a Blockfrost Preview key, both read from
+environment variables (`WALLET_SEED`, `BLOCKFROST_KEY` — see `.env.example` and
+`scripts/config_preview.ts`), plus test LAMP minted and a custody instance deployed with
+`cut_bps = 10000`. The pricing core and the bridge are used unchanged; only the emulator is
+swapped for the Blockfrost provider and a real wallet.
 
 ---
 
-## 6. TODO & rủi ro còn lại
+## 6. Open items and remaining risk
 
-- **[BÁO ANH — LAMP repo]** `LAMP/Treasury/onchain/plutus.json` STALE (build trước khi thêm
-  params `proposal_policy/ms_per_epoch`). Cần `aiken build` + commit lại. Script Treasury
-  `01_deploy_custody.ts`/`02_collect_e2e.ts` over-apply params lên blueprint stale → fail
-  on-chain. Nên thêm kiểm `parameters.length` trong `applyValidator`. (PoC né bằng blueprint
-  tự build ở `vendor/`.)
-- **[DEFER v1.1]** Oracle LAMP/USD (Score DEX TWAP); xác thực tín hiệu cầu (H-2); wire MAGIC
-  ConsumeMAGIC/AppEconomics (repo read-only — chờ spec); chi node LampNet qua Release+vesting.
-- **[Tích hợp]** orilife-core (Python) gọi lớp TS này (gateway HTTP hoặc service) — chưa wire.
-- **Rủi ro**: tham số kinh tế hiện là placeholder mô phỏng (DAO chỉnh thật sau); cap tuyệt đối
-  100 USD/tác vụ cần DAO xác nhận hợp lý theo loại tài sản.
+- **The blueprint is vendored, and that is by design on both sides.** An earlier version of this
+  file claimed LAMP's committed `Treasury/onchain/plutus.json` was stale. That was wrong: LAMP does
+  not commit that file at all — `LAMP/.gitignore:7,9` excludes `**/onchain/plutus.json` as a build
+  artifact, and `git ls-files` finds none. So the blueprint has to come from somewhere, and this
+  repository vendors one and pins the LAMP commit that produced it. The real hazard is unchanged
+  and is the reason `scripts/rebuild-blueprint.sh` was deleted: re-applying parameters onto a
+  blueprint built from different sources changes the script hash and therefore the address.
+  Anyone writing similar deploy tooling should check `parameters.length` before applying.
+- **Deferred to v1.1**: the LAMP/USD oracle (Score DEX TWAP); authenticating the demand signals
+  (H-2); wiring MAGIC ConsumeMAGIC/AppEconomics; paying LampNet nodes through Release + vesting.
+- **Integration**: orilife-core (Python) does not call this TypeScript layer yet — neither through
+  an HTTP gateway nor as a service. The live fee catalogue is still
+  `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
+- **Risk**: the economic parameters here are simulation placeholders, to be set by the DAO later;
+  and the absolute cap of 100 USD per task needs DAO confirmation per asset class.
+
+OriLife agent

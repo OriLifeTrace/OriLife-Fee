@@ -12,13 +12,13 @@ const CFG: BridgeConfig = {
 };
 
 describe("utf8ToHex", () => {
-  it("orilife → hex", () => {
+  it("orilife -> hex", () => {
     expect(utf8ToHex("orilife")).toBe("6f72696c696665");
   });
 });
 
 describe("quoteToCollectItems", () => {
-  it("map mỗi bucket oil>0 thành 1 item, đúng category + asset", () => {
+  it("maps every bucket with oil>0 to one item, with the right category and asset", () => {
     const q = quoteFee({ task: "animal.enroll", declaredValueUsd: 1000, anchorTier: "immediate" });
     const items = quoteToCollectItems(q, CFG);
     expect(items.length).toBeGreaterThan(0);
@@ -28,44 +28,44 @@ describe("quoteToCollectItems", () => {
       expect(it.name).toBe(CFG.lampNameHex);
       expect(it.amount).toBeGreaterThan(0n);
     }
-    // category trùng với bucket tương ứng
+    // categories match the corresponding buckets
     const cats = items.map((i) => i.category).sort();
     expect(cats).toEqual([0n, 1n, 2n]);
   });
 
-  it("Σ item.amount == feeOil (cut_bps=10000 ⇒ cut=amount)", () => {
+  it("Σ item.amount == feeOil (cut_bps=10000 means cut=amount)", () => {
     const q = quoteFee({ task: "tree.register", declaredValueUsd: 500, lifecycleEvents: 2 });
     const items = quoteToCollectItems(q, CFG);
     expect(totalItemOil(items)).toBe(q.feeOil);
   });
 
-  it("bỏ qua bucket oil==0", () => {
-    // feeOil rất nhỏ có thể khiến protocol/anchor = 0 → item bị lọc
+  it("skips buckets whose oil is 0", () => {
+    // a very small feeOil can leave protocol/anchor at 0, so those items are filtered out
     const q = quoteFee({ task: "fruit.qr", anchorTier: "no_anchor" });
     const items = quoteToCollectItems(q, CFG);
     for (const it of items) expect(it.amount).toBeGreaterThan(0n);
-    // tổng vẫn khớp (các bucket 0 không mất gì)
+    // the total still matches — nothing is lost by dropping the zero buckets
     expect(totalItemOil(items)).toBe(q.feeOil);
   });
 });
 
 describe("assertBridgeInvariants", () => {
-  it("cut_bps đúng 10000 + Σ khớp → không ném", () => {
+  it("cut_bps of exactly 10000 with a matching Σ does not throw", () => {
     const q = quoteFee({ task: "animal.enroll", declaredValueUsd: 1000 });
     const items = quoteToCollectItems(q, CFG);
     expect(() => assertBridgeInvariants(q, items, ORILIFE_CUT_BPS)).not.toThrow();
   });
 
-  it("cut_bps ≠ 10000 → BRIDGE-001", () => {
+  it("cut_bps other than 10000 -> BRIDGE-001", () => {
     const q = quoteFee({ task: "animal.enroll", declaredValueUsd: 1000 });
     const items = quoteToCollectItems(q, CFG);
     expect(() => assertBridgeInvariants(q, items, 700n)).toThrow(/BRIDGE-001/);
   });
 
-  it("Σ item ≠ feeOil → BRIDGE-002", () => {
+  it("Σ items other than feeOil -> BRIDGE-002", () => {
     const q = quoteFee({ task: "animal.enroll", declaredValueUsd: 1000 });
     const items = quoteToCollectItems(q, CFG);
-    items[0]!.amount += 1n; // phá tổng
+    items[0]!.amount += 1n; // break the total
     expect(() => assertBridgeInvariants(q, items, ORILIFE_CUT_BPS)).toThrow(/BRIDGE-002/);
   });
 });

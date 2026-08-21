@@ -1,12 +1,12 @@
-# Rác build + phụ thuộc
+# Build output and dependencies
 node_modules/
 dist/
 *.log
 
-# Trạng thái on-chain sinh ra lúc chạy (không phải mã nguồn)
+# On-chain state generated at runtime (not source)
 .treasury-onchain/
 
-# BÍ MẬT — tuyệt đối không vào git. Nguồn duy nhất của secret là $AGENT_SECRETS.
+# SECRETS — never commit these.
 .env
 .env.*
 !.env.example
@@ -18,8 +18,11 @@ dist/
 *.mnemonic
 *.seed
 
-# Rule/state của trợ lý — thuộc máy từng người, không thuộc repo
+# Assistant rules and state — belong to an individual machine, not to this repo
 _Agents/
 CLAUDE.md
 .claude/
 _wt-*
+
+# LAMP pinned to a commit, materialised by scripts/pin-lamp.sh — never commit another repo's code here.
+vendor/lamp/

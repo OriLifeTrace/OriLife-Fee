@@ -1,5 +1,10 @@
-// Config Preview testnet cho orilife-fee scripts. Đọc cùng LAMP/.env (chia sẻ ví/key).
-// Dùng vendor/treasury-custody.plutus.json TƯƠI (LAMP committed plutus.json đang STALE).
+// Preview-testnet configuration for the orilife-fee scripts.
+//
+// Secrets (the Blockfrost key, the wallet seed) come from ENVIRONMENT VARIABLES, or from THIS
+// repository's own `.env`. This file used to load the LAMP repository's `.env` through a relative
+// path that escaped the repo root: when one repository reads another's secret file, nobody can
+// audit which repository holds what, and the path breaks the moment someone lays the two repos out
+// differently. `.env` is in `.gitignore`; see `.env.example` for the variables you need.
 
 import dotenv from "dotenv";
 import {
@@ -13,9 +18,7 @@ import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Đọc LAMP/.env (4 cấp trên scripts/ = OriLifeTrace/../LAMP/.env)
-// __dirname = .../OriLifeTrace/orilife-fee/scripts → ../../../ = Projects/
-dotenv.config({ path: resolve(__dirname, "../../../LAMP/.env") });
+dotenv.config({ path: resolve(__dirname, "../.env") });
 
 export const NETWORK: Network = (process.env.NETWORK ?? "Preview") as Network;
 export const BLOCKFROST_URL = `https://cardano-${NETWORK.toLowerCase()}.blockfrost.io/api/v0`;
@@ -24,10 +27,16 @@ export const WALLET_SEED    = (process.env.WALLET_SEED ?? "").trim().replace(/\s
 export const LAMP_POLICY_ID = (process.env.LAMP_POLICY_ID ?? "").trim();
 export const LAMP_ASSET_NAME = (process.env.LAMP_ASSET_NAME ?? "4c414d50").trim();
 
-/** LAMP unit (policy+name, Lucid format). */
+/** The instance_id of the OriLife fee custody instance, as UTF-8.
+ *  Several custody instances share one script address (the address is derived from the parameters,
+ *  not from the instance), so anything reading "the custody UTxO" MUST select by instance_id.
+ *  Picking the first UTxO that merely has a datum can land on somebody else's ledger. */
+export const INSTANCE_ID = "orilife-fee-v1";
+
+/** LAMP unit (policy + name, in Lucid format). */
 export const LAMP_UNIT = LAMP_POLICY_ID + LAMP_ASSET_NAME;
 
-// Blueprint TƯƠI (vendor — không phụ thuộc LAMP committed plutus.json STALE).
+// The blueprint is vendored, so it does not depend on anything LAMP happens to have on disk.
 const BLUEPRINT_PATH = resolve(__dirname, "../vendor/treasury-custody.plutus.json");
 
 export function loadCustodyCompiledCode(): string {
@@ -35,19 +44,23 @@ export function loadCustodyCompiledCode(): string {
     validators: { title: string; compiledCode: string; parameters?: unknown[] }[];
   };
   const v = json.validators.find((x) => x.title === "custody.custody.spend");
-  if (!v) throw new Error("custody.custody.spend không thấy trong vendor blueprint.");
+  if (!v) throw new Error("custody.custody.spend not found in the vendored blueprint.");
   if (!v.parameters || v.parameters.length !== 2) {
-    throw new Error("blueprint STALE (thiếu 2 params) — chạy scripts/rebuild-blueprint.sh.");
+    throw new Error(
+      "the blueprint no longer takes 2 parameters — it has been rebuilt against a newer LAMP, and "
+      + "that build produces a DIFFERENT script hash, i.e. a different address from the custody "
+      + "deployed in scripts/deployed_preview.json. Restore the file from git; do not rebuild it. "
+      + "See scripts/pin-lamp.sh.");
   }
   return v.compiledCode;
 }
 
-/** Placeholder proposal_policy (32-byte hex) — Collect không dùng. */
+/** Placeholder proposal_policy (28-byte hex) — Collect does not use it. */
 export const PROPOSAL_POLICY_PLACEHOLDER = "00".repeat(28);
-/** ms mỗi epoch (Preview ≈ 1.5 giờ). */
-export const MS_PER_EPOCH_PREVIEW = 432_000_000n; // 5 ngày testnet slot → epoch
+/** Milliseconds per epoch. */
+export const MS_PER_EPOCH_PREVIEW = 432_000_000n; // 5 testnet days per epoch
 
-/** Apply custody validator với params chuẩn. */
+/** Apply the custody validator with the canonical parameters. */
 export function custodyValidator(): Validator {
   return {
     type: "PlutusV3",
@@ -61,10 +74,13 @@ export function custodyAddress(v: Validator): string {
   return credentialToAddress(NETWORK, scriptHashToCredential(validatorToScriptHash(v)));
 }
 
+const ENV_HINT = "Set it as an environment variable, or add it to this repository's .env "
+  + "(see .env.example).";
+
 export function assertEnv(): void {
-  if (!BLOCKFROST_KEY) throw new Error("thiếu BLOCKFROST_KEY trong LAMP/.env");
-  if (!WALLET_SEED)    throw new Error("thiếu WALLET_SEED trong LAMP/.env");
-  if (!LAMP_POLICY_ID) throw new Error("thiếu LAMP_POLICY_ID trong LAMP/.env");
+  if (!BLOCKFROST_KEY) throw new Error(`Missing BLOCKFROST_KEY. ${ENV_HINT}`);
+  if (!WALLET_SEED)    throw new Error(`Missing WALLET_SEED. ${ENV_HINT}`);
+  if (!LAMP_POLICY_ID) throw new Error(`Missing LAMP_POLICY_ID. ${ENV_HINT}`);
 }
 
 export async function makeLucid(): Promise<LucidEvolution> {
@@ -78,7 +94,7 @@ export function explorerTx(hash: string): string {
   return `https://${NETWORK.toLowerCase()}.cardanoscan.io/transaction/${hash}`;
 }
 
-// deployed.json cho orilife-fee/scripts/
+// deployed.json for orilife-fee/scripts/
 export const DEPLOYED_PATH = resolve(__dirname, "deployed_preview.json");
 
 export interface OriLifeDeployedState {
@@ -92,7 +108,7 @@ export function loadDeployed(): OriLifeDeployedState {
   try {
     return JSON.parse(readFileSync(DEPLOYED_PATH, "utf8")) as OriLifeDeployedState;
   } catch {
-    throw new Error("chưa có deployed_preview.json — chạy 01_deploy_custody_preview.ts trước.");
+    throw new Error("no deployed_preview.json yet — run 01_deploy_custody_preview.ts first.");
   }
 }
 
@@ -101,8 +117,8 @@ export function saveDeployed(s: OriLifeDeployedState): void {
 }
 
 export async function awaitTx(lucid: LucidEvolution, txHash: string, label = ""): Promise<void> {
-  process.stdout.write(`   ⏳ đợi confirm ${label} ${txHash.slice(0, 12)}… `);
-  const ok = await lucid.awaitTx(txHash, 300_000); // 5 phút timeout
-  if (!ok) throw new Error(`tx ${txHash} không confirm sau timeout`);
+  process.stdout.write(`   waiting for ${label} ${txHash.slice(0, 12)} to confirm... `);
+  const ok = await lucid.awaitTx(txHash, 300_000); // 5-minute timeout
+  if (!ok) throw new Error(`tx ${txHash} did not confirm before the timeout`);
   console.log("✓");
 }

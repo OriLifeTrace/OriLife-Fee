@@ -1,44 +1,49 @@
-// OriLife — CẦU NỐI phí → Treasury Collect. Đây là INTERFACE CONTRACT giữa lõi định giá
-// OriLife (off-chain) và lớp custody LAMP Treasury (on-chain). Orchestrator giữ phần này.
+// OriLife — the BRIDGE from a fee to a Treasury Collect. This is the INTERFACE CONTRACT between
+// OriLife's off-chain pricing core and the on-chain LAMP Treasury custody layer. The orchestrator
+// owns this piece.
 //
-// Quyết định thiết kế (4 trục — ghi để truy vết, KHÔNG hỏi lại):
-//   • Định hướng dài hạn: OriLife là integrator ĐẦU TIÊN nạp phí thật về treasury → chứng
-//     minh vòng giá trị LAMP cho mọi Cardano team (mục tiêu "làm LAMP có giá trị").
-//   • Nguyên bản: builder Collect chỉ giữ `cut = floor(amount × cut_bps/10000)` vào bucket;
-//     phần `amount − cut` là residual trả provider. Phí OriLife là phí THẬT (không có
-//     provider nhận lại) ⇒ instance OriLife đặt cut_bps = 10000 (100%) ⇒ cut == amount ⇒
-//     TOÀN BỘ khoản phí vào treasury, residual = 0. Mỗi bucket = một CollectItem.category.
-//   • Tối ưu eUTXO: gộp 3 bucket vào MỘT giao dịch Collect (nhiều item, 1 custody in/out)
-//     → 1 UTxO, 1 lần phí mạng (anti-bloat — đúng tinh thần "micro-collect" của Treasury).
-//   • Lợi ích người dùng + bền vững: Σ item == fee_oil tuyệt đối (bảo toàn, fixed-supply,
-//     không đốt); phần node LampNet giữ ở bucket LAMPNET_REWARD, redeem sau qua Release.
+// Design decisions, recorded so they are traceable rather than re-litigated:
+//   • Long-term direction: OriLife is the FIRST integrator to deposit real fees into the treasury,
+//     which demonstrates the LAMP value loop to every Cardano team.
+//   • From first principles: the Collect builder keeps `cut = floor(amount × cut_bps/10000)` in the
+//     bucket and returns `amount − cut` as residual to a provider. An OriLife fee is a REAL fee
+//     (no provider gets anything back), so the OriLife instance sets cut_bps = 10000 (100%),
+//     making cut == amount: the whole fee lands in the treasury and residual is 0. Each bucket is
+//     one CollectItem.category.
+//   • eUTXO efficiency: all three buckets go into ONE Collect transaction (several items, one
+//     custody input and output) — one UTxO, one network fee. This is the "micro-collect"
+//     anti-bloat approach the Treasury layer is built around.
+//   • User benefit and sustainability: Σ items == fee_oil exactly (conservation; fixed supply;
+//     nothing burned). The LampNet node share stays in the LAMPNET_REWARD bucket and is redeemed
+//     later through Release.
 
 import type { FeeQuote } from "./feeEngine.js";
 
-/** Mirror byte-perfect LAMP/Treasury/offchain/src/types.ts CollectItem (interface
- *  contract). Giữ cục bộ để lõi bridge test được KHÔNG cần repo LAMP; treasuryClient.ts
- *  import bản THẬT của Treasury SDK và kiểm tương thích cấu trúc khi dựng tx. */
+/** A byte-for-byte mirror of LAMP/Treasury/offchain/src/types.ts CollectItem (the interface
+ *  contract). Kept locally so the bridge core is testable WITHOUT the LAMP repository;
+ *  treasuryClient.ts imports the REAL Treasury SDK type and checks structural compatibility
+ *  when it builds the transaction. */
 export interface CollectItem {
-  app_id: string;   // hex — ai trả (OriLife)
-  policy: string;   // hex — asset (LAMP policy)
-  name: string;     // hex — asset name (LAMP)
-  amount: bigint;   // oil đã định giá ở app
-  category: bigint; // bucket_id đích cho phần cut
+  app_id: string;   // hex — who is paying (OriLife)
+  policy: string;   // hex — the asset (LAMP policy)
+  name: string;     // hex — the asset name (LAMP)
+  amount: bigint;   // oil, as priced by the app
+  category: bigint; // destination bucket_id for the cut
 }
 
-/** cut_bps BẮT BUỘC của instance custody OriLife (100% — phí thật, không residual). */
+/** The cut_bps the OriLife custody instance MUST use (100% — a real fee, no residual). */
 export const ORILIFE_CUT_BPS = 10_000n;
 
 export interface BridgeConfig {
-  /** app_id (hex) ghi vào receipt — định danh OriLife. */
+  /** app_id (hex) written into the receipt — identifies OriLife. */
   appIdHex: string;
   /** LAMP policy id (hex). */
   lampPolicyHex: string;
-  /** LAMP asset name (hex) — thường "4c414d50". */
+  /** LAMP asset name (hex) — usually "4c414d50". */
   lampNameHex: string;
 }
 
-/** Mã hoá chuỗi UTF-8 → hex (cho app_id "orilife"). Tự encode, không phụ thuộc lib DOM. */
+/** Encode a UTF-8 string to hex (for the app_id "orilife"). Hand-rolled, so no DOM dependency. */
 export function utf8ToHex(s: string): string {
   let hex = "";
   for (const ch of s) {
@@ -54,8 +59,9 @@ export function utf8ToHex(s: string): string {
 }
 
 /**
- * FeeQuote → CollectItem[]. Mỗi bucket có oil > 0 thành 1 item (category = bucket).
- * Bỏ qua bucket oil == 0 (không tạo dòng sổ rỗng). amount = oil (cut_bps=10000 ⇒ cut=oil).
+ * FeeQuote → CollectItem[]. Every bucket with oil > 0 becomes one item (category = bucket).
+ * Buckets with oil == 0 are skipped, so no empty ledger rows are created. amount = oil,
+ * because cut_bps = 10000 makes cut = oil.
  */
 export function quoteToCollectItems(quote: FeeQuote, cfg: BridgeConfig): CollectItem[] {
   return quote.buckets
@@ -69,32 +75,36 @@ export function quoteToCollectItems(quote: FeeQuote, cfg: BridgeConfig): Collect
     }));
 }
 
-/** Tổng oil của lô item (phải == quote.feeOil khi cut_bps=10000). */
+/** Total oil across a batch of items (must equal quote.feeOil when cut_bps = 10000). */
 export function totalItemOil(items: CollectItem[]): bigint {
   return items.reduce((acc, it) => acc + it.amount, 0n);
 }
 
 /**
- * Kiểm bất biến cầu nối TRƯỚC khi dựng tx (fail-fast, không tốn phí mạng):
- *   • instance custody phải cut_bps == 10000 (pure-deposit) — nếu khác, semantics sai.
- *   • Σ item.amount == quote.feeOil (không hụt/dư oil — khớp bảo toàn on-chain).
- *   • mọi amount ≥ 0.
- * Ném lỗi rõ nếu vi phạm.
+ * Check the bridge invariants BEFORE building a transaction (fail fast, before spending a
+ * network fee):
+ *   • the custody instance must have cut_bps == 10000 (pure deposit) — anything else changes
+ *     the semantics;
+ *   • Σ item.amount == quote.feeOil (no oil lost or invented — matches on-chain conservation);
+ *   • every amount is >= 0.
+ * Throws with a specific message on any violation.
  */
 export function assertBridgeInvariants(
   quote: FeeQuote, items: CollectItem[], custodyCutBps: bigint,
 ): void {
   if (custodyCutBps !== ORILIFE_CUT_BPS) {
     throw new Error(
-      `BRIDGE-001: instance OriLife phải cut_bps=${ORILIFE_CUT_BPS} (100%, pure-deposit), `
-        + `gặp ${custodyCutBps}. cut_bps khác ⇒ cut≠amount ⇒ phí không vào đủ treasury.`,
+      `BRIDGE-001: the OriLife instance must use cut_bps=${ORILIFE_CUT_BPS} (100%, pure deposit), `
+        + `got ${custodyCutBps}. Any other cut_bps makes cut != amount, so the fee does not fully `
+        + `reach the treasury.`,
     );
   }
   const sum = totalItemOil(items);
   if (sum !== quote.feeOil) {
-    throw new Error(`BRIDGE-002: Σ item (${sum}) ≠ feeOil (${quote.feeOil}) — vi phạm bảo toàn.`);
+    throw new Error(
+      `BRIDGE-002: Σ items (${sum}) != feeOil (${quote.feeOil}) — conservation violated.`);
   }
   if (items.some((it) => it.amount < 0n)) {
-    throw new Error("BRIDGE-003: có item amount < 0.");
+    throw new Error("BRIDGE-003: an item has amount < 0.");
   }
 }

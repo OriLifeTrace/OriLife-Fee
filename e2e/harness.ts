@@ -1,5 +1,6 @@
-// OriLife — harness emulator tái dùng: chạy trọn luồng phí → Collect qua validator Plutus
-// custody THẬT trong Lucid Emulator, trả số đo on-chain để script in / test assert.
+// OriLife — a reusable emulator harness: runs the whole fee -> Collect flow through the REAL
+// custody Plutus validator inside the Lucid Emulator, and returns the on-chain measurements for a
+// script to print or a test to assert on.
 
 import {
   Emulator, generateEmulatorAccount, Lucid, Data,
@@ -10,9 +11,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { custodyDatumToCbor, decodeCustodyDatum } from "../../../LAMP/Treasury/offchain/src/datum.js";
-import { ledgerGet } from "../../../LAMP/Treasury/offchain/src/collect.js";
-import type { CustodyDatum } from "../../../LAMP/Treasury/offchain/src/types.js";
+import { custodyDatumToCbor, decodeCustodyDatum } from "../vendor/lamp/Treasury/offchain/src/datum.js";
+import { ledgerGet } from "../vendor/lamp/Treasury/offchain/src/collect.js";
+import type { CustodyDatum } from "../vendor/lamp/Treasury/offchain/src/types.js";
 
 import { quoteFee, type QuoteInput, type FeeQuote } from "../src/feeEngine.js";
 import { buildFeeCollectTx } from "../src/treasuryClient.js";
@@ -54,14 +55,17 @@ interface Env {
 }
 
 function loadCustodyCompiledCode(): string {
-  // Blueprint TƯƠI (vendor) build lại từ custody.ak hiện tại — committed plutus.json của
-  // LAMP/Treasury đang STALE (thiếu params). Tái dựng: scripts/rebuild-blueprint.sh.
+  // The blueprint comes from vendor/ and is NEVER rebuilt from LAMP HEAD: HEAD takes 3 parameters
+  // and produces a different script hash, i.e. a different address from the deployed custody.
+  // See scripts/pin-lamp.sh.
   const p = resolve(__dirname, "../vendor/treasury-custody.plutus.json");
   const json = JSON.parse(readFileSync(p, "utf8")) as { validators: { title: string; compiledCode: string; parameters?: unknown[] }[] };
   const v = json.validators.find((x) => x.title === "custody.custody.spend");
-  if (!v) throw new Error("không thấy custody.custody.spend trong vendor blueprint.");
+  if (!v) throw new Error("custody.custody.spend not found in the vendored blueprint.");
   if (!v.parameters || v.parameters.length !== 2) {
-    throw new Error("blueprint custody.custody.spend thiếu 2 params — chạy scripts/rebuild-blueprint.sh.");
+    throw new Error(
+      "custody.custody.spend no longer takes 2 parameters — the blueprint has been rebuilt against "
+      + "a newer LAMP. Restore the file from git; do not rebuild it. See scripts/pin-lamp.sh.");
   }
   return v.compiledCode;
 }
@@ -97,7 +101,7 @@ async function seedCustody(env: Env): Promise<UTxO> {
   const txHash = await signed.submit();
   env.emulator.awaitBlock(1);
   const u = (await env.lucid.utxosAt(env.custodyAddress)).find((x) => x.txHash === txHash && x.datum);
-  if (!u) throw new Error("seed custody UTxO không tìm thấy sau submit.");
+  if (!u) throw new Error("seed custody UTxO not found after submit.");
   return u;
 }
 
@@ -113,7 +117,7 @@ async function collectStep(env: Env, custodyUtxo: UTxO, quoteInput: QuoteInput):
   env.emulator.awaitBlock(1);
 
   const after = (await env.lucid.utxosAt(env.custodyAddress)).find((u) => u.txHash === txHash && u.datum);
-  if (!after) throw new Error("custody UTxO sau collect không tìm thấy.");
+  if (!after) throw new Error("custody UTxO not found after the collect.");
   const datumAfter = decodeCustodyDatum(Data.from(after.datum!));
 
   const result: CollectStepResult = {
@@ -130,7 +134,8 @@ async function collectStep(env: Env, custodyUtxo: UTxO, quoteInput: QuoteInput):
   return { result, nextUtxo: after };
 }
 
-/** Chạy 1 giao dịch Collect (phí OriLife → 3 bucket treasury) qua validator Plutus thật. */
+/** Run one Collect transaction (an OriLife fee into the three treasury buckets) through the real
+ *  Plutus validator. */
 export async function runEmulatorCollect(quoteInput: QuoteInput): Promise<EmulatorCollectResult> {
   const env = await setupEnv();
   const seed = await seedCustody(env);
@@ -138,7 +143,8 @@ export async function runEmulatorCollect(quoteInput: QuoteInput): Promise<Emulat
   return { ...result, custodyAddress: env.custodyAddress };
 }
 
-/** Chạy NHIỀU Collect nối tiếp trên CÙNG custody (phủ nhánh sổ incremental — cộng dồn dòng cũ). */
+/** Run SEVERAL Collects in a row on the SAME custody (covers the incremental ledger branch, where
+ *  an existing row is added to). */
 export async function runEmulatorMultiCollect(quoteInputs: QuoteInput[]): Promise<CollectStepResult[]> {
   const env = await setupEnv();
   let utxo = await seedCustody(env);

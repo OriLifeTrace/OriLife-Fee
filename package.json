@@ -2,7 +2,7 @@
   "name": "@orilife/fee",
   "version": "0.1.0",
   "type": "module",
-  "description": "OriLife — cơ chế tính phí tác vụ người dùng và cầu nối nạp LAMP về các bucket treasury (LAMP Treasury Collect).",
+  "description": "OriLife — task-fee pricing for users, plus the bridge that deposits LAMP into treasury buckets (LAMP Treasury Collect).",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
