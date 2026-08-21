@@ -1,0 +1,335 @@
+{
+  "preamble": {
+    "title": "orilifetrace/orilife_treasury",
+    "description": "Aiken contracts for project 'orilifetrace/orilife_treasury'",
+    "version": "0.0.0",
+    "plutusVersion": "v3",
+    "compiler": {
+      "name": "Aiken",
+      "version": "v1.1.21+42babe5"
+    },
+    "license": "Apache-2.0"
+  },
+  "validators": [
+    {
+      "title": "donation_escrow.donation_escrow.spend",
+      "datum": {
+        "title": "datum",
+        "schema": {
+          "$ref": "#/definitions/orilife~1types~1EscrowDatum"
+        }
+      },
+      "redeemer": {
+        "title": "_redeemer",
+        "schema": {
+          "$ref": "#/definitions/orilife~1types~1EscrowRedeemer"
+        }
+      },
+      "parameters": [
+        {
+          "title": "carp_policy",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1PolicyId"
+          }
+        },
+        {
+          "title": "carp_name",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1AssetName"
+          }
+        },
+        {
+          "title": "min_lovelace_per_carp",
+          "schema": {
+            "$ref": "#/definitions/Int"
+          }
+        }
+      ],
+      "compiledCode": "59048801010022229800aba2aba1aba0aab9faab9eaab9dab9a9bae0049bae0039bad002488888888896600264653001300b00198059806000cdc3a4005300b0024888966002600460166ea800e2653001301000198081808800cdc3a40009112cc004c004c03cdd5004456600260206ea80222b30013001300f37540051332259800980198089baa00189991192cc004c02cc050dd5000c660026eb8c060c054dd5000c88c8cc00400400c896600200314bd7044cc8966002600a00513301d00233004004001899802002000a032301c001301d0014069222323322330020020012259800800c00e26464b30013372200c00315980099b8f00600189bad301d002802a0368998020021810801a036375c6036002603c00280e0c8c8cc0040040188966002003003899192cc004cdc8804000c56600266e3c02000626eacc07800a00a80e2266008008604400680e0dd7180e000980f800a03a14bd6f7b6300a400123019301a301a00148888cc88c966002602464660020026600e6eb0c080c074dd5009119baf3021301e37546042603c6ea8c02cc078dd500099ba548008cc080dd4804a5eb808966002003148002266e012002330020023022001407d15980099b87375a603e01800715980099b88480000062b300133710900000bc56600264b3001300e301c375400313371266e0ccdc019b80337040040309040546b5c83a40029040546b5c839bad3020301d375400314a080d8c07cc080c080c080c080c080c080c080c080c080c080c080c080c080c080c080c070dd5008c4c8c8cc004004010896600200314a315980099192cc004cdc3a400860406ea8006264b30013013302137540031323232598009814800c660026eb4c0a000e6eb8c0a000a605000291119912cc004c06c006264b3001302f0018992cc004c074c0acdd5000c4c8c8cc896600260680070088b2062375a60620026eb8c0c4008c0c4004c0b0dd5000c5902a1817000c5902c18151baa0038acc004c0800062b3001302a37540070028b20568b205040a02b30013370e00730013756602a60506ea802604b024404515980099b8f00200c899baf0013374a90001981500da5eb8229410264528204c302737540028b204c3028001302700130223754003164080604860426ea8006294101f180418101baa00130220018998010011811800c528203a40806eb8c07cc080032294101a452820348a50406914a080d2294101a19b81002329800800c00a9000200222259800801440063300100398110014cdc0000cc004dd59805980f1baa302100280dc0690072006407d30013756600c60326ea8c018c064dd5003c05a02a8010cc00cdd61800980c9baa00e23375e603a60346ea8c074c068dd500099ba548008cc070dd4802a5eb8116404c602e60286ea8c05cc050dd51800980a1baa0023015301237540024602c602e00316404060206ea8c04cc040dd500119198008009bac30143011375400c44b30010018a60103d87a80008992cc004cdd7980b18099baa001006899ba548000cc0540052f5c113300300330170024044602a002809a2c80722c808a2c807060186ea800e2c80506016002600c6ea802e29344d9590041",
+      "hash": "7ad64886e6e9c0163436053d5347f7ffdbb620ea4df9d7de9df2f0be"
+    },
+    {
+      "title": "donation_escrow.donation_escrow.else",
+      "redeemer": {
+        "schema": {}
+      },
+      "parameters": [
+        {
+          "title": "carp_policy",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1PolicyId"
+          }
+        },
+        {
+          "title": "carp_name",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1AssetName"
+          }
+        },
+        {
+          "title": "min_lovelace_per_carp",
+          "schema": {
+            "$ref": "#/definitions/Int"
+          }
+        }
+      ],
+      "compiledCode": "59048801010022229800aba2aba1aba0aab9faab9eaab9dab9a9bae0049bae0039bad002488888888896600264653001300b00198059806000cdc3a4005300b0024888966002600460166ea800e2653001301000198081808800cdc3a40009112cc004c004c03cdd5004456600260206ea80222b30013001300f37540051332259800980198089baa00189991192cc004c02cc050dd5000c660026eb8c060c054dd5000c88c8cc00400400c896600200314bd7044cc8966002600a00513301d00233004004001899802002000a032301c001301d0014069222323322330020020012259800800c00e26464b30013372200c00315980099b8f00600189bad301d002802a0368998020021810801a036375c6036002603c00280e0c8c8cc0040040188966002003003899192cc004cdc8804000c56600266e3c02000626eacc07800a00a80e2266008008604400680e0dd7180e000980f800a03a14bd6f7b6300a400123019301a301a00148888cc88c966002602464660020026600e6eb0c080c074dd5009119baf3021301e37546042603c6ea8c02cc078dd500099ba548008cc080dd4804a5eb808966002003148002266e012002330020023022001407d15980099b87375a603e01800715980099b88480000062b300133710900000bc56600264b3001300e301c375400313371266e0ccdc019b80337040040309040546b5c83a40029040546b5c839bad3020301d375400314a080d8c07cc080c080c080c080c080c080c080c080c080c080c080c080c080c080c080c070dd5008c4c8c8cc004004010896600200314a315980099192cc004cdc3a400860406ea8006264b30013013302137540031323232598009814800c660026eb4c0a000e6eb8c0a000a605000291119912cc004c06c006264b3001302f0018992cc004c074c0acdd5000c4c8c8cc896600260680070088b2062375a60620026eb8c0c4008c0c4004c0b0dd5000c5902a1817000c5902c18151baa0038acc004c0800062b3001302a37540070028b20568b205040a02b30013370e00730013756602a60506ea802604b024404515980099b8f00200c899baf0013374a90001981500da5eb8229410264528204c302737540028b204c3028001302700130223754003164080604860426ea8006294101f180418101baa00130220018998010011811800c528203a40806eb8c07cc080032294101a452820348a50406914a080d2294101a19b81002329800800c00a9000200222259800801440063300100398110014cdc0000cc004dd59805980f1baa302100280dc0690072006407d30013756600c60326ea8c018c064dd5003c05a02a8010cc00cdd61800980c9baa00e23375e603a60346ea8c074c068dd500099ba548008cc070dd4802a5eb8116404c602e60286ea8c05cc050dd51800980a1baa0023015301237540024602c602e00316404060206ea8c04cc040dd500119198008009bac30143011375400c44b30010018a60103d87a80008992cc004cdd7980b18099baa001006899ba548000cc0540052f5c113300300330170024044602a002809a2c80722c808a2c807060186ea800e2c80506016002600c6ea802e29344d9590041",
+      "hash": "7ad64886e6e9c0163436053d5347f7ffdbb620ea4df9d7de9df2f0be"
+    },
+    {
+      "title": "fee_vault.fee_vault.spend",
+      "datum": {
+        "title": "datum",
+        "schema": {
+          "$ref": "#/definitions/orilife~1types~1VaultDatum"
+        }
+      },
+      "redeemer": {
+        "title": "redeemer",
+        "schema": {
+          "$ref": "#/definitions/orilife~1types~1VaultRedeemer"
+        }
+      },
+      "parameters": [
+        {
+          "title": "carp_policy",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1PolicyId"
+          }
+        },
+        {
+          "title": "carp_name",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1AssetName"
+          }
+        },
+        {
+          "title": "skim_bps",
+          "schema": {
+            "$ref": "#/definitions/Int"
+          }
+        },
+        {
+          "title": "escrow_hash",
+          "schema": {
+            "$ref": "#/definitions/ByteArray"
+          }
+        },
+        {
+          "title": "operator_key",
+          "schema": {
+            "$ref": "#/definitions/ByteArray"
+          }
+        }
+      ],
+      "compiledCode": "5906c90101002222229800aba2aba1aba0aab9faab9eaab9dab9a9bae0069bae0059bad0049bae0039bae00248888888888896600264653001300d00198069807000cdc3a4005300d00248889660026004601a6ea800e33001300e3754007370e90004dc3a4009300d375400891111991192cc004c01801226464b3001301b002801c590181bad301900130153754017159800980480244c8c96600260360050038b2030375a6032002602a6ea802e2b300130050048acc004c054dd5005c0062c80b22b30013370e90030024566002602a6ea802e00316405916404c80990132026159800980298099baa0018994c004dd6980c000cdd6980c180c800cc8cc004004dd6180c980b1baa0092259800800c530103d87a80008992cc004cdd7980d980c1baa001006899ba548000cc0680052f5c1133003003301c0024058603400280c1222598009804980b9baa00189991192cc004c03cc068dd5000c660026eb8c078c06cdd5000c88c8cc00400400c896600200314bd7044cc8966002600a00513302300233004004001899802002000a03e3022001302300140812301f302030200019ba54800a44b30010018a40011337009001198010011810800a03c9b88480024603e604060406040604060406040604060400032232330010010032259800800c528456600266e3cdd71811000801c528c4cc008008c08c00501d20409119b833370066e0000800520010014888888888c8cc896600266e1d20063026375403b15980080145660026600a6eb0c018c09cdd500d01045660026030600600313370e6600866e0804808920a09c010118a50409514a0812a2941025456600260560031323259800980c98141baa0018992cc004c06cc0a4dd5000c4c8c9660026060003198009bad302f0029bad302f00191119199119801001000912cc004006007132325980099b910060018acc004cdc7803000c4dd6981a001401503244cc010010c0e000d0321bae3032001303500140cc64646600200200c44b3001001801c4c8c96600266e440200062b30013371e01000313756606a00500540cd133004004303900340cc6eb8c0cc004c0d80050340a5eb7bdb18052000488a600330013756602c605e6ea8c058c0bcdd500bc0b2056800b30013756602c605e6ea802205902b4005337026601866e0800c0a920a09c01002488966002b300100d8acc004c8cdc498009bab301a30333754603460666ea806cc004dd5980d18199baa00c29800800d220100a4410040151337129000000c52820608a5040c11980098189baa0289b870069b87005488966002604c00713259800980b000c56600266e1ccdc0803003800c566002600666e000840062600404114a081a2294103445282068375a6070606a6ea80ae2b300130290038992cc004c0580062b30013370e66e0401c0180062b300130030218acc004c008cdc0010000c56600266e24024cc04ccdc1010818a414138031332259800800c00a2b3001303c001899192cc004c0a8c0e4dd5000c4c966002605860746ea80062646464b300130420018cc004dd69820801cdd718208014c104005222332259800981a000c4c966002609000313259800981b18221baa0018991919912cc004c13400e0111641286eb4c128004dd71825001182500098229baa0018b208630470018b208a30433754007159800981b800c56600260866ea800e005164111164104820856600266e1e60026eacc0a0c104dd5004c0fa07a80980322b30013370e00601915980099b8f002026899baf0014c103d87a80008a5040fd14a081fa294103f18201baa00145903f18208009820000981d9baa0018b2072303d303a37540031640e0603860726ea8004c0ec00600481c90390a503301a37586032606c6ea80a48cdd7981d181b9baa303a303737540026032660726ea40c52f5c114a081a22941034452820688a5040d114a081a0dd6981c181a9baa02b8acc004c09400e2b30013301337586028606a6ea80a00ba2b300130020208acc004c00407e2b30013371200a00d13371200800b14a0819a2941033452820668a5040cd14a0819903320664528206022c8168c0bc004c0a8dd5000c59028181618149baa0018b204e300b3028375400260540031640a081296600260326002660126eb0c0a0c094dd500c119baf3029302637546052604c6ea8c034c098dd50009804198141ba900b4bd704566002600a04113371204090504e00c52820468a50408c660126eb0c020c094dd500c119baf3029302637546052604c6ea8004c020cc0a0dd4805a5eb80c014015164064603a60346ea8c074c068dd51800980d1baa002301b3018375400246038603a00316405830143754602e60286ea80062c8090c054010c054c058011164030300d0013008375401b149a26cac80301",
+      "hash": "457a22dc87c11139ecad0ba6e101486dcc3c773aa370f04c79cabcb6"
+    },
+    {
+      "title": "fee_vault.fee_vault.else",
+      "redeemer": {
+        "schema": {}
+      },
+      "parameters": [
+        {
+          "title": "carp_policy",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1PolicyId"
+          }
+        },
+        {
+          "title": "carp_name",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1AssetName"
+          }
+        },
+        {
+          "title": "skim_bps",
+          "schema": {
+            "$ref": "#/definitions/Int"
+          }
+        },
+        {
+          "title": "escrow_hash",
+          "schema": {
+            "$ref": "#/definitions/ByteArray"
+          }
+        },
+        {
+          "title": "operator_key",
+          "schema": {
+            "$ref": "#/definitions/ByteArray"
+          }
+        }
+      ],
+      "compiledCode": "5906c90101002222229800aba2aba1aba0aab9faab9eaab9dab9a9bae0069bae0059bad0049bae0039bae00248888888888896600264653001300d00198069807000cdc3a4005300d00248889660026004601a6ea800e33001300e3754007370e90004dc3a4009300d375400891111991192cc004c01801226464b3001301b002801c590181bad301900130153754017159800980480244c8c96600260360050038b2030375a6032002602a6ea802e2b300130050048acc004c054dd5005c0062c80b22b30013370e90030024566002602a6ea802e00316405916404c80990132026159800980298099baa0018994c004dd6980c000cdd6980c180c800cc8cc004004dd6180c980b1baa0092259800800c530103d87a80008992cc004cdd7980d980c1baa001006899ba548000cc0680052f5c1133003003301c0024058603400280c1222598009804980b9baa00189991192cc004c03cc068dd5000c660026eb8c078c06cdd5000c88c8cc00400400c896600200314bd7044cc8966002600a00513302300233004004001899802002000a03e3022001302300140812301f302030200019ba54800a44b30010018a40011337009001198010011810800a03c9b88480024603e604060406040604060406040604060400032232330010010032259800800c528456600266e3cdd71811000801c528c4cc008008c08c00501d20409119b833370066e0000800520010014888888888c8cc896600266e1d20063026375403b15980080145660026600a6eb0c018c09cdd500d01045660026030600600313370e6600866e0804808920a09c010118a50409514a0812a2941025456600260560031323259800980c98141baa0018992cc004c06cc0a4dd5000c4c8c9660026060003198009bad302f0029bad302f00191119199119801001000912cc004006007132325980099b910060018acc004cdc7803000c4dd6981a001401503244cc010010c0e000d0321bae3032001303500140cc64646600200200c44b3001001801c4c8c96600266e440200062b30013371e01000313756606a00500540cd133004004303900340cc6eb8c0cc004c0d80050340a5eb7bdb18052000488a600330013756602c605e6ea8c058c0bcdd500bc0b2056800b30013756602c605e6ea802205902b4005337026601866e0800c0a920a09c01002488966002b300100d8acc004c8cdc498009bab301a30333754603460666ea806cc004dd5980d18199baa00c29800800d220100a4410040151337129000000c52820608a5040c11980098189baa0289b870069b87005488966002604c00713259800980b000c56600266e1ccdc0803003800c566002600666e000840062600404114a081a2294103445282068375a6070606a6ea80ae2b300130290038992cc004c0580062b30013370e66e0401c0180062b300130030218acc004c008cdc0010000c56600266e24024cc04ccdc1010818a414138031332259800800c00a2b3001303c001899192cc004c0a8c0e4dd5000c4c966002605860746ea80062646464b300130420018cc004dd69820801cdd718208014c104005222332259800981a000c4c966002609000313259800981b18221baa0018991919912cc004c13400e0111641286eb4c128004dd71825001182500098229baa0018b208630470018b208a30433754007159800981b800c56600260866ea800e005164111164104820856600266e1e60026eacc0a0c104dd5004c0fa07a80980322b30013370e00601915980099b8f002026899baf0014c103d87a80008a5040fd14a081fa294103f18201baa00145903f18208009820000981d9baa0018b2072303d303a37540031640e0603860726ea8004c0ec00600481c90390a503301a37586032606c6ea80a48cdd7981d181b9baa303a303737540026032660726ea40c52f5c114a081a22941034452820688a5040d114a081a0dd6981c181a9baa02b8acc004c09400e2b30013301337586028606a6ea80a00ba2b300130020208acc004c00407e2b30013371200a00d13371200800b14a0819a2941033452820668a5040cd14a0819903320664528206022c8168c0bc004c0a8dd5000c59028181618149baa0018b204e300b3028375400260540031640a081296600260326002660126eb0c0a0c094dd500c119baf3029302637546052604c6ea8c034c098dd50009804198141ba900b4bd704566002600a04113371204090504e00c52820468a50408c660126eb0c020c094dd500c119baf3029302637546052604c6ea8004c020cc0a0dd4805a5eb80c014015164064603a60346ea8c074c068dd51800980d1baa002301b3018375400246038603a00316405830143754602e60286ea80062c8090c054010c054c058011164030300d0013008375401b149a26cac80301",
+      "hash": "457a22dc87c11139ecad0ba6e101486dcc3c773aa370f04c79cabcb6"
+    }
+  ],
+  "definitions": {
+    "ByteArray": {
+      "dataType": "bytes"
+    },
+    "Int": {
+      "dataType": "integer"
+    },
+    "Option<cardano/transaction/OutputReference>": {
+      "title": "Option",
+      "anyOf": [
+        {
+          "title": "Some",
+          "description": "An optional value.",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/cardano~1transaction~1OutputReference"
+            }
+          ]
+        },
+        {
+          "title": "None",
+          "description": "Nothing.",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "cardano/assets/AssetName": {
+      "title": "AssetName",
+      "dataType": "bytes"
+    },
+    "cardano/assets/PolicyId": {
+      "title": "PolicyId",
+      "dataType": "bytes"
+    },
+    "cardano/transaction/OutputReference": {
+      "title": "OutputReference",
+      "description": "An `OutputReference` is a unique reference to an output on-chain. The `output_index`\n corresponds to the position in the output list of the transaction (identified by its id)\n that produced that output",
+      "anyOf": [
+        {
+          "title": "OutputReference",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "transaction_id",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "output_index",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    },
+    "orilife/types/EscrowDatum": {
+      "title": "EscrowDatum",
+      "description": "Kho tạm giữ phần đã trích. Tiền ở đây chỉ có một lối ra: một giao dịch có nộp\n kho bạc Cardano.",
+      "anyOf": [
+        {
+          "title": "EscrowDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "carp",
+              "description": "Số CARP mà UTxO này đang giữ. Khai tường minh để người đọc không phải suy từ\n giá trị kèm theo, và để hợp đồng bắt được trường hợp khai lệch.",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "vault",
+              "description": "Băm hợp đồng kho phí đã trích khoản này ra.\n\n Vì sao cần: `list.length(own_inputs) == 1` bên kho phí chỉ đếm input CÙNG băm\n script. Hai instance kho phí khác tham số có băm khác nhau, nên mỗi cái tự thấy\n mình là input duy nhất, và MỘT output ở kho tạm thoả điều kiện cho CẢ HAI — hai\n lần `skimmed` tăng mà chỉ một lần CARP rời kho. Ràng khoản trích vào đúng một băm\n kho phí là chỗ chặn việc đó.",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "parent",
+              "description": "Ô đầu vào mà UTxO này là phần dư của. `None` nghĩa là khoản vừa được trích sang,\n chưa từng bị tiêu.\n\n Vì sao cần: kho tạm đo phần đã rời đi bằng `giữ − trả_lại`, và trước đây `trả_lại`\n là TỔNG mọi output ở địa chỉ mình. Bộ lọc đó không phân biệt phần dư của chính\n mình với tiền MỚI vừa được gửi vào trong cùng giao dịch, nên ghép `Skim` và\n `Donate` vào một giao dịch là `trả_lại` phình lên và nghĩa vụ bốc hơi. Có trường\n này thì phần dư tự khai mình là phần dư của ô nào.",
+              "$ref": "#/definitions/Option<cardano~1transaction~1OutputReference>"
+            }
+          ]
+        }
+      ]
+    },
+    "orilife/types/EscrowRedeemer": {
+      "title": "EscrowRedeemer",
+      "anyOf": [
+        {
+          "title": "Donate",
+          "description": "Đổi CARP lấy ADA rồi nộp kho bạc. Ai cũng gọi được — cố ý: nếu OriLife biến mất\n thì lời hứa vẫn thực thi được bởi người ngoài.",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        }
+      ]
+    },
+    "orilife/types/VaultDatum": {
+      "title": "VaultDatum",
+      "description": "Trạng thái kho phí. Hai con số này là toàn bộ lời khai của kho, và ai cũng đọc được\n chúng trực tiếp từ UTxO — không phải hỏi máy chủ nào.\n\n `collected` chỉ tăng, `skimmed` chỉ tăng, và `skimmed` không bao giờ vượt phần\n nghĩa vụ tính trên `collected`. Ba câu đó là toàn bộ cơ chế bảo đảm lời hứa 10%.",
+      "anyOf": [
+        {
+          "title": "VaultDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "collected",
+              "description": "Tổng CARP đã từng chảy vào kho, cộng dồn từ đầu. KHÔNG phải số dư hiện tại.",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "skimmed",
+              "description": "Tổng CARP đã chuyển sang kho tạm chờ đổi ADA. Cũng cộng dồn.",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    },
+    "orilife/types/VaultRedeemer": {
+      "title": "VaultRedeemer",
+      "anyOf": [
+        {
+          "title": "Collect",
+          "description": "Nộp phí vào kho. Ai cũng gọi được — kho không cần biết người nộp là ai, nó chỉ\n cần giá trị vào đúng bằng con số khai trong `amount`.",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "amount",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        },
+        {
+          "title": "Skim",
+          "description": "Trích phần nghĩa vụ sang kho tạm. Không được trích quá phần nghĩa vụ.",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "title": "amount",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        },
+        {
+          "title": "Operate",
+          "description": "Chi tiêu phần vận hành. Đây là chỗ DUY NHẤT tiền rời kho mà không sang kho tạm,\n nên đây cũng là chỗ duy nhất cần chặn.",
+          "dataType": "constructor",
+          "index": 2,
+          "fields": []
+        },
+        {
+          "title": "Close",
+          "description": "Đóng kho. Chỉ được khi nghĩa vụ đã trả hết; sau đó UTxO kho không còn tồn tại.\n\n Vì sao phải có: không có nó thì ADA giữ chỗ nằm lại vĩnh viễn (mọi nhánh khác đều\n ép `lovelace_of(ra) >= lovelace_of(vào)`, tức ADA chỉ có đường vào), và `operator_key`\n là tham số biên dịch nên xoay khoá vận hành là phải dựng instance mới — mà instance\n cũ thì không đóng lại được. Đóng được kho là điều kiện để xoay khoá mà không bỏ của.",
+          "dataType": "constructor",
+          "index": 3,
+          "fields": []
+        }
+      ]
+    }
+  }
+}
