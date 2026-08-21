@@ -1,8 +1,8 @@
-// OriLife Fee — Deploy custody instance trên Preview testnet.
-// Instance đặc biệt: cut_bps=10000 (pure-deposit) + instance_id="orilife-fee-v1".
-// Accepted asset: LAMP từ LAMP/.env LAMP_POLICY_ID.
+// OriLife Fee — deploy a custody instance on the Preview testnet.
+// A special instance: cut_bps=10000 (pure deposit) with instance_id="orilife-fee-v1".
+// Accepted asset: the LAMP named by LAMP_POLICY_ID in this repository's .env (see .env.example).
 //
-// Chạy: npx tsx scripts/01_deploy_custody_preview.ts
+// Run: npx tsx scripts/01_deploy_custody_preview.ts
 
 import { Data } from "@lucid-evolution/lucid";
 import {
@@ -10,11 +10,11 @@ import {
   makeLucid, custodyValidator, custodyAddress,
   explorerTx, awaitTx, saveDeployed,
 } from "./config_preview.js";
-import { custodyDatumToCbor } from "../../../LAMP/Treasury/offchain/src/datum.js";
-import { seedDatumOk } from "../../../LAMP/Treasury/offchain/src/collect.js";
-import { assetsToMap } from "../../../LAMP/Treasury/offchain/src/collectBuilder.js";
+import { custodyDatumToCbor } from "../vendor/lamp/Treasury/offchain/src/datum.js";
+import { seedDatumOk } from "../vendor/lamp/Treasury/offchain/src/collect.js";
+import { assetsToMap } from "../vendor/lamp/Treasury/offchain/src/collectBuilder.js";
 import { utf8ToHex } from "../src/bridge.js";
-import type { CustodyDatum } from "../../../LAMP/Treasury/offchain/src/types.js";
+import type { CustodyDatum } from "../vendor/lamp/Treasury/offchain/src/types.js";
 
 const SEED_LOVELACE = 5_000_000n; // 5 ADA min-UTxO
 
@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   const custAddr = custodyAddress(script);
   console.log("Custody address :", custAddr);
 
-  // Seed datum: cut_bps=10000, sổ rỗng, LAMP là asset được nhận.
+  // Seed datum: cut_bps=10000, an empty ledger, LAMP as the accepted asset.
   const seedDatum: CustodyDatum = {
     instance_id:      utf8ToHex("orilife-fee-v1"),
     accepted_assets:  [{ policy: LAMP_POLICY_ID, name: LAMP_ASSET_NAME }],
@@ -43,10 +43,10 @@ async function main(): Promise<void> {
     consumed_proposals: [],
   };
 
-  // Tự kiểm off-chain trước (seedDatumOk).
-  const seedValueMap = { "|": SEED_LOVELACE }; // chỉ ADA (LAMP chưa trong seed)
+  // Self-check off-chain first (seedDatumOk).
+  const seedValueMap = { "|": SEED_LOVELACE }; // ADA only — no LAMP in the seed yet
   if (!seedDatumOk(seedValueMap, seedDatum, SEED_LOVELACE)) {
-    throw new Error("seed datum không hợp lệ off-chain — kiểm tra accepted_assets / ledger.");
+    throw new Error("the seed datum is invalid off-chain — check accepted_assets and ledger.");
   }
 
   // Build + submit seed tx.
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   console.log("   Explorer :", explorerTx(txHash));
   await awaitTx(lucid, txHash, "deploy-custody");
 
-  // Lưu state.
+  // Persist the deployed state.
   saveDeployed({
     network: NETWORK,
     custody: { hash: "n/a (seed, no NFT)", address: custAddr },
@@ -67,8 +67,8 @@ async function main(): Promise<void> {
     genesis: { txHash, outputIndex: 0 },
   });
 
-  console.log("\n✅ Custody instance OriLife (cut_bps=10000) đã deploy trên", NETWORK);
-  console.log("   Chạy tiếp: npx tsx scripts/02_collect_preview.ts");
+  console.log("\nOriLife custody instance (cut_bps=10000) deployed on", NETWORK);
+  console.log("   Next: npx tsx scripts/02_collect_preview.ts");
   void Data; void assetsToMap;
 }
 
