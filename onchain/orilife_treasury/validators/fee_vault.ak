@@ -9,19 +9,51 @@
 //// Câu 3 là chỗ chịu lực. Hai câu đầu chỉ là kế toán; nếu thiếu câu 3 thì kế toán đúng
 //// mà tiền vẫn đi hết. Nói cách khác: cơ chế không bảo đảm "sẽ nộp", nó bảo đảm
 //// "không tiêu được phần phải nộp" — và đó là thứ mạnh hơn một lời hứa.
+////
+//// PHẢI NÓI THẲNG MỘT ĐIỀU, vì tiêu đề dễ đọc quá tay: cái được ép bằng mã là quan hệ
+//// giữa `skimmed` và `collected`. `collected` thì KHÔNG có gì ép — nó tăng khi có người
+//// gọi `Collect`, và hợp đồng không biết doanh thu thật của OriLife là bao nhiêu. Và
+//// giá trị thật vào kho bạc là `10% × sàn/giá thị trường`, không phải 10% của doanh thu.
+////
+//// ─────────────────────────────────────────────────────────────────────────────
+//// BỐN CHỖ ĐÃ VÁ Ở BẢN NÀY
+////
+//// 1. `escrow_receives` chỉ đòi "một output ở địa chỉ kho tạm, mang đúng `amount`".
+////    `list.length(own_inputs) == 1` bên dưới chỉ đếm input CÙNG băm script, nên hai
+////    instance kho phí khác tham số (khác băm) mỗi cái tự thấy mình là input duy nhất,
+////    và MỘT output ở kho tạm thoả điều kiện cho CẢ HAI. Hai lần `skimmed` tăng, một
+////    lần CARP rời kho. Nay khoản trích phải khai đúng băm kho phí đã trích ra nó.
+////
+////    Chỗ này không phải giả định xa: kho tạm KHÔNG nhận `skim_bps` hay `operator_key`
+////    làm tham số, và thứ tự dựng là escrow TRƯỚC rồi vault mới nuốt `escrowHash`. Nên
+////    hễ đổi tỉ lệ trích hoặc xoay khoá vận hành là băm vault đổi mà băm kho tạm KHÔNG
+////    đổi — tiền đề của lỗ này tự sinh ra từ chính việc vá lỗ `Close` bên dưới.
+////
+//// 2. Khoản trích phải khai `parent = None`. Xem đầu `donation_escrow.ak`: kho tạm phân
+////    biệt phần DƯ với khoản MỚI bằng trường đó, nên kho phí phải đóng dấu đúng.
+////
+//// 3. `Operate` thiếu `carp_after <= carp_before`, tức nó là một cửa NẠP không ghi sổ:
+////    bơm CARP vào kho qua `Operate` thì `collected` đứng yên, và phần CARP đó không
+////    bao giờ sinh nghĩa vụ.
+////
+//// 4. Không có đường đóng kho, mà mọi nhánh đều ép `lovelace_of(ra) >= lovelace_of(vào)`
+////    ⟹ ADA giữ chỗ vào một chiều, nằm lại vĩnh viễn. Thêm `Close`, và nó cũng là đường
+////    xoay `operator_key`: khoá là tham số biên dịch nên xoay khoá = dựng instance mới,
+////    mà instance cũ trước đây không đóng lại được.
+//// ─────────────────────────────────────────────────────────────────────────────
 
 use aiken/collection/list
 use cardano/address.{Script, from_verification_key}
 use cardano/assets.{AssetName, PolicyId, lovelace_of, quantity_of}
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
 use orilife/fixtures.{
-  carp_name, carp_policy, escrow_hash, inline, input_from, operator_key, ref_at,
-  script_output, skim_bps, stranger_key, tx, value_with_carp, vault_hash,
-  wallet_output,
+  carp_name, carp_policy, escrow_datum, escrow_hash, inline, input_from,
+  operator_key, ref_at, script_output, skim_bps, stranger_key, tx,
+  value_with_carp, vault_hash, wallet_output,
 }
-use orilife/math.{floor_div}
+use orilife/math.{ceil_div}
 use orilife/types.{
-  Collect, EscrowDatum, Operate, Skim, VaultDatum, VaultRedeemer,
+  Close, Collect, EscrowDatum, Operate, Skim, VaultDatum, VaultRedeemer,
 }
 
 /// Điểm cơ bản: 10000 = 100%.
@@ -34,7 +66,7 @@ validator fee_vault(
   skim_bps: Int,
   /// Băm hợp đồng kho tạm. Phần trích chỉ được đi về đúng một địa chỉ này.
   escrow_hash: ByteArray,
-  /// Khoá vận hành OriLife. Chỉ cần cho `Operate`; nộp phí thì ai cũng nộp được.
+  /// Khoá vận hành OriLife. Cần cho `Operate` và `Close`; nộp phí thì ai cũng nộp được.
   operator_key: ByteArray,
 ) {
   spend(
@@ -47,8 +79,8 @@ validator fee_vault(
     expect Some(own_input) = find_input(tx.inputs, own_ref)
     expect Script(own_hash) = own_input.output.address.payment_credential
 
-    // Đúng một UTxO kho vào, đúng một UTxO kho ra. Kho phí là một ô sổ duy nhất; cho
-    // phép nhiều ô là mở đường cho phép cộng chồng chéo mà không hợp đồng nào theo kịp.
+    // Đúng một UTxO kho vào. Kho phí là một ô sổ duy nhất; cho phép nhiều ô là mở đường
+    // cho phép cộng chồng chéo mà không hợp đồng nào theo kịp.
     let own_inputs =
       list.filter(
         tx.inputs,
@@ -60,61 +92,97 @@ validator fee_vault(
         fn(output) { output.address.payment_credential == Script(own_hash) },
       )
 
-    expect [continuing] = own_outputs
-    expect InlineDatum(raw_next) = continuing.datum
-    expect VaultDatum { collected: next_collected, skimmed: next_skimmed }: VaultDatum =
-      raw_next
-
-    let carp_before = quantity_of(own_input.output.value, carp_policy, carp_name)
-    let carp_after = quantity_of(continuing.value, carp_policy, carp_name)
-
-    // Nghĩa vụ CÒN NỢ sau khi giao dịch này xong, tính trên tổng dòng vào mới.
-    let owed = floor_div(next_collected * skim_bps, bps_scale) - next_skimmed
-
-    let shape_ok = and {
+    let base_ok = and {
         list.length(own_inputs) == 1,
         skim_bps > 0,
         skim_bps <= bps_scale,
-        // Kho không được rút cạn ADA giữ chỗ — hết ADA là UTxO không tồn tại được.
-        lovelace_of(continuing.value) >= lovelace_of(own_input.output.value),
-        // Nghĩa vụ không bao giờ âm: `skimmed` không vượt phần tính trên `collected`.
-        owed >= 0,
       }
 
-    let action_ok =
-      when redeemer is {
-        // Nộp phí. Không cần chữ ký ai: con số khai phải khớp đúng giá trị thật chảy
-        // vào, nên khai gian là giao dịch hỏng chứ không phải là lợi.
-        Collect { amount } -> and {
-            amount > 0,
-            carp_after - carp_before == amount,
-            next_collected == collected + amount,
-            next_skimmed == skimmed,
+    when redeemer is {
+      // Đóng kho. Không có ô kho đi ra, nên nhánh này KHÔNG đọc datum tiếp theo — đó
+      // cũng là lý do nó phải tách khỏi ba nhánh kia thay vì thêm một cờ.
+      Close -> and {
+          base_ok,
+          list.has(tx.extra_signatories, operator_key),
+          list.length(own_outputs) == 0,
+          // Chỉ đóng được khi đã trả hết nghĩa vụ. Không có câu này thì `Close` là một
+          // cửa thoát cho toàn bộ cơ chế.
+          ceil_div(collected * skim_bps, bps_scale) == skimmed,
+        }
+
+      _ -> {
+        expect [continuing] = own_outputs
+        expect InlineDatum(raw_next) = continuing.datum
+        expect VaultDatum { collected: next_collected, skimmed: next_skimmed }: VaultDatum =
+          raw_next
+
+        let carp_before = quantity_of(own_input.output.value, carp_policy, carp_name)
+        let carp_after = quantity_of(continuing.value, carp_policy, carp_name)
+
+        // Nghĩa vụ CÒN NỢ sau khi giao dịch này xong, tính trên tổng dòng vào mới.
+        // Làm tròn LÊN — cùng chiều với trần được trích ở nhánh `Skim`, nếu không thì
+        // phần chênh không trích hết được và kho không bao giờ đóng lại được.
+        let owed = ceil_div(next_collected * skim_bps, bps_scale) - next_skimmed
+
+        let shape_ok = and {
+            base_ok,
+            // Kho không được rút cạn ADA giữ chỗ — hết ADA là UTxO không tồn tại được.
+            // ADA chỉ có đường vào; đường ra duy nhất là `Close`.
+            lovelace_of(continuing.value) >= lovelace_of(own_input.output.value),
+            // Nghĩa vụ không bao giờ âm: `skimmed` không vượt phần tính trên `collected`.
+            owed >= 0,
           }
 
-        // Trích phần nghĩa vụ sang kho tạm.
-        Skim { amount } -> and {
-            amount > 0,
-            carp_before - carp_after == amount,
-            next_collected == collected,
-            next_skimmed == skimmed + amount,
-            // Không được trích quá phần nghĩa vụ. Trích thừa là lấy tiền vận hành
-            // đem nộp, và nó biến một bất biến thành một quyết định tuỳ hứng.
-            next_skimmed <= floor_div(collected * skim_bps, bps_scale),
-            escrow_receives(tx, escrow_hash, carp_policy, carp_name, amount),
+        let action_ok =
+          when redeemer is {
+            // Nộp phí. Không cần chữ ký ai: con số khai phải khớp đúng giá trị thật chảy
+            // vào, nên khai gian là giao dịch hỏng chứ không phải là lợi.
+            Collect { amount } -> and {
+                amount > 0,
+                carp_after - carp_before == amount,
+                next_collected == collected + amount,
+                next_skimmed == skimmed,
+              }
+
+            // Trích phần nghĩa vụ sang kho tạm.
+            Skim { amount } -> and {
+                amount > 0,
+                carp_before - carp_after == amount,
+                next_collected == collected,
+                next_skimmed == skimmed + amount,
+                // Không được trích quá phần nghĩa vụ. Trích thừa là lấy tiền vận hành
+                // đem nộp, và nó biến một bất biến thành một quyết định tuỳ hứng.
+                next_skimmed <= ceil_div(collected * skim_bps, bps_scale),
+                escrow_receives(
+                  tx,
+                  escrow_hash,
+                  own_hash,
+                  carp_policy,
+                  carp_name,
+                  amount,
+                ),
+              }
+
+            // Tiêu phần vận hành. Đây là chỗ DUY NHẤT CARP rời kho mà không sang kho tạm.
+            Operate -> and {
+                list.has(tx.extra_signatories, operator_key),
+                next_collected == collected,
+                next_skimmed == skimmed,
+                // Chỉ được RÚT ra, không được nạp vào. Nạp qua đây là nạp không ghi sổ:
+                // `collected` đứng yên nên phần CARP đó không bao giờ sinh nghĩa vụ.
+                // Muốn nạp thì gọi `Collect`.
+                carp_after <= carp_before,
+                // Phần còn lại phải phủ được nghĩa vụ còn nợ.
+                carp_after >= owed,
+              }
+
+            // Không tới được: `Close` đã bắt ở nhánh trên. Có mặt để phép khớp đủ nhánh.
+            Close -> False
           }
 
-        // Tiêu phần vận hành. Đây là chỗ DUY NHẤT CARP rời kho mà không sang kho tạm.
-        Operate -> and {
-            list.has(tx.extra_signatories, operator_key),
-            next_collected == collected,
-            next_skimmed == skimmed,
-            // Phần còn lại phải phủ được nghĩa vụ còn nợ.
-            carp_after >= owed,
-          }
+        shape_ok && action_ok
       }
-
-    shape_ok && action_ok
+    }
   }
 
   else(_) {
@@ -126,10 +194,18 @@ fn find_input(inputs: List<Input>, own_ref: OutputReference) -> Option<Input> {
   list.find(inputs, fn(input) { input.output_reference == own_ref })
 }
 
-/// Đúng một UTxO đi về kho tạm, mang đúng `amount` CARP, và khai đúng con số đó.
+/// Đúng một UTxO đi về kho tạm, mang đúng `amount` CARP, khai đúng con số đó, khai đúng
+/// băm kho phí đã trích ra nó, và khai mình là khoản MỚI (`parent = None`).
+///
+/// Ba lời khai chứ không phải một, và mỗi cái chặn một thứ khác nhau:
+///   * `carp == amount` — chặn khai lệch để lần sau rời kho tạm rẻ hơn thực tế;
+///   * `vault == own_hash` — chặn hai instance kho phí dùng chung MỘT khoản trích;
+///   * `parent == None` — chặn khoản trích tự nhận là "phần dư" của một ô kho tạm nào đó,
+///     là chính cái làm phép đo `giữ − trả_lại` bên kho tạm sai.
 fn escrow_receives(
   tx: Transaction,
   escrow_hash: ByteArray,
+  own_hash: ByteArray,
   policy: PolicyId,
   name: AssetName,
   amount: Int,
@@ -142,10 +218,12 @@ fn escrow_receives(
   when to_escrow is {
     [only] -> {
       expect InlineDatum(raw) = only.datum
-      expect EscrowDatum { carp }: EscrowDatum = raw
+      expect EscrowDatum { carp, vault, parent }: EscrowDatum = raw
       and {
         quantity_of(only.value, policy, name) == amount,
         carp == amount,
+        vault == own_hash,
+        parent == None,
       }
     }
     _ -> False
@@ -156,7 +234,6 @@ fn escrow_receives(
 // Bài kiểm. Mỗi bài đặt tên theo LUẬT nó khoá, không theo hàm nó gọi — đọc tên
 // bài kiểm là biết hợp đồng hứa gì, không phải mở mã ra mới biết.
 // ─────────────────────────────────────────────────────────────────────────────
-
 
 fn run(
   datum: VaultDatum,
@@ -178,6 +255,19 @@ fn run(
 
 fn vault_utxo(lovelace: Int, carp: Int, d: VaultDatum) -> Output {
   script_output(vault_hash, value_with_carp(lovelace, carp), inline(d))
+}
+
+/// Khoản trích đúng khuôn: khai đủ ba thứ kho phí đòi.
+fn skim_output(carp: Int) -> Output {
+  script_output(
+    escrow_hash,
+    value_with_carp(2_000_000, carp),
+    inline(escrow_datum(carp, None)),
+  )
+}
+
+fn to(key: ByteArray, carp: Int) -> Output {
+  wallet_output(from_verification_key(key), value_with_carp(2_000_000, carp))
 }
 
 /// Nộp phí: `collected` tăng đúng bằng lượng CARP thật sự chảy vào.
@@ -239,14 +329,7 @@ test skim_moves_exactly_the_obligation() {
     Skim { amount: 100 },
     tx(
       [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
-      [
-        vault_utxo(2_000_000, 900, after),
-        script_output(
-          escrow_hash,
-          value_with_carp(2_000_000, 100),
-          inline(EscrowDatum { carp: 100 }),
-        ),
-      ],
+      [vault_utxo(2_000_000, 900, after), skim_output(100)],
       [],
       None,
     ),
@@ -263,14 +346,7 @@ test skim_beyond_the_obligation_is_rejected() {
     Skim { amount: 101 },
     tx(
       [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
-      [
-        vault_utxo(2_000_000, 899, after),
-        script_output(
-          escrow_hash,
-          value_with_carp(2_000_000, 101),
-          inline(EscrowDatum { carp: 101 }),
-        ),
-      ],
+      [vault_utxo(2_000_000, 899, after), skim_output(101)],
       [],
       None,
     ),
@@ -286,13 +362,7 @@ test skim_must_land_at_the_escrow_script() {
     Skim { amount: 100 },
     tx(
       [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
-      [
-        vault_utxo(2_000_000, 900, after),
-        wallet_output(
-          from_verification_key(operator_key),
-          value_with_carp(2_000_000, 100),
-        ),
-      ],
+      [vault_utxo(2_000_000, 900, after), to(operator_key, 100)],
       [],
       None,
     ),
@@ -314,7 +384,61 @@ test skim_escrow_datum_must_match_the_value() {
         script_output(
           escrow_hash,
           value_with_carp(2_000_000, 100),
-          inline(EscrowDatum { carp: 1 }),
+          inline(escrow_datum(1, None)),
+        ),
+      ],
+      [],
+      None,
+    ),
+  )
+}
+
+/// Khoản trích phải khai ĐÚNG băm kho phí đã trích ra nó.
+///
+/// Không có câu này thì hai instance kho phí khác tham số cùng `Skim` một lượng trong
+/// MỘT giao dịch sẽ cùng thoả — mỗi cái chỉ đếm input cùng băm với mình nên đều thấy
+/// mình là input duy nhất, và cùng chấp nhận một output ở kho tạm. Hai lần `skimmed`
+/// tăng, một lần CARP rời kho.
+test skim_output_must_name_this_vault() {
+  let before = VaultDatum { collected: 1_000, skimmed: 0 }
+  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  !run(
+    before,
+    Skim { amount: 100 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
+      [
+        vault_utxo(2_000_000, 900, after),
+        script_output(
+          escrow_hash,
+          value_with_carp(2_000_000, 100),
+          inline(
+            EscrowDatum { carp: 100, vault: stranger_key, parent: None },
+          ),
+        ),
+      ],
+      [],
+      None,
+    ),
+  )
+}
+
+/// Khoản trích phải khai mình là khoản MỚI. Khai `parent = Some(...)` là tự nhận mình
+/// là phần dư của một ô kho tạm — đúng cái làm phép đo `giữ − trả_lại` bên kho tạm sai.
+test skim_output_must_be_a_fresh_deposit() {
+  let before = VaultDatum { collected: 1_000, skimmed: 0 }
+  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  !run(
+    before,
+    Skim { amount: 100 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
+      [
+        vault_utxo(2_000_000, 900, after),
+        script_output(
+          escrow_hash,
+          value_with_carp(2_000_000, 100),
+          inline(escrow_datum(100, Some(ref_at(9)))),
         ),
       ],
       [],
@@ -332,13 +456,7 @@ test operate_may_spend_above_the_reserve() {
     Operate,
     tx(
       [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, state))],
-      [
-        vault_utxo(2_000_000, 100, state),
-        wallet_output(
-          from_verification_key(operator_key),
-          value_with_carp(2_000_000, 900),
-        ),
-      ],
+      [vault_utxo(2_000_000, 100, state), to(operator_key, 900)],
       [operator_key],
       None,
     ),
@@ -354,13 +472,23 @@ test operate_cannot_touch_the_reserve() {
     Operate,
     tx(
       [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, state))],
-      [
-        vault_utxo(2_000_000, 99, state),
-        wallet_output(
-          from_verification_key(operator_key),
-          value_with_carp(2_000_000, 901),
-        ),
-      ],
+      [vault_utxo(2_000_000, 99, state), to(operator_key, 901)],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// `Operate` KHÔNG phải cửa nạp. Bơm CARP vào kho qua đây thì `collected` đứng yên, nên
+/// phần CARP đó không bao giờ sinh nghĩa vụ — nạp thì phải gọi `Collect`.
+test operate_cannot_add_carp_without_recording_it() {
+  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  !run(
+    state,
+    Operate,
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, state))],
+      [vault_utxo(2_000_000, 5_000, state)],
       [operator_key],
       None,
     ),
@@ -375,13 +503,7 @@ test operate_needs_the_operator_signature() {
     Operate,
     tx(
       [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, state))],
-      [
-        vault_utxo(2_000_000, 100, state),
-        wallet_output(
-          from_verification_key(stranger_key),
-          value_with_carp(2_000_000, 900),
-        ),
-      ],
+      [vault_utxo(2_000_000, 100, state), to(stranger_key, 900)],
       [stranger_key],
       None,
     ),
@@ -398,60 +520,110 @@ test operate_cannot_rewrite_the_ledger() {
     Operate,
     tx(
       [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, state))],
-      [
-        vault_utxo(2_000_000, 0, forged),
-        wallet_output(
-          from_verification_key(operator_key),
-          value_with_carp(2_000_000, 1_000),
-        ),
-      ],
+      [vault_utxo(2_000_000, 100, forged), to(operator_key, 900)],
       [operator_key],
       None,
     ),
   )
 }
 
-/// Hai UTxO kho trong một giao dịch bị chặn: một phép cộng trên hai ô sổ là chỗ để
-/// một ô thoả điều kiện thay cho cả hai.
-test vault_rejects_two_vault_inputs() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
-  !run(
-    state,
-    Operate,
+/// Đóng kho khi đã trả hết nghĩa vụ: được, và ADA giữ chỗ đi ra theo.
+///
+/// Không có nhánh này thì mọi nhánh khác đều ép `lovelace ra >= lovelace vào`, tức ADA
+/// vào một chiều và nằm lại vĩnh viễn. Nó cũng là đường DUY NHẤT xoay `operator_key`:
+/// khoá là tham số biên dịch, xoay khoá là dựng instance mới, mà instance cũ trước đây
+/// không đóng lại được.
+test close_frees_the_reserved_ada_once_the_obligation_is_settled() {
+  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  run(
+    settled,
+    Close,
     tx(
-      [
-        input_from(ref_at(0), vault_utxo(2_000_000, 1_000, state)),
-        input_from(ref_at(1), vault_utxo(2_000_000, 1_000, state)),
-      ],
-      [
-        vault_utxo(2_000_000, 100, state),
-        wallet_output(
-          from_verification_key(operator_key),
-          value_with_carp(2_000_000, 1_900),
-        ),
-      ],
+      [input_from(ref_at(0), vault_utxo(5_000_000, 900, settled))],
+      [to(operator_key, 900)],
       [operator_key],
       None,
     ),
   )
 }
 
-/// Rút cạn ADA giữ chỗ bị chặn — UTxO không có ADA thì không tồn tại được, và một
-/// kho không tồn tại được là một kho biến mất cùng nghĩa vụ của nó.
-test vault_cannot_drain_its_min_ada() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+/// Còn nợ một đơn vị thì không đóng được. Không có câu này thì `Close` là cửa thoát
+/// cho toàn bộ cơ chế.
+test close_requires_the_obligation_to_be_settled() {
+  let owing = VaultDatum { collected: 1_000, skimmed: 99 }
   !run(
-    state,
-    Operate,
+    owing,
+    Close,
     tx(
-      [input_from(ref_at(0), vault_utxo(5_000_000, 1_000, state))],
-      [
-        vault_utxo(1_000_000, 100, state),
-        wallet_output(
-          from_verification_key(operator_key),
-          value_with_carp(4_000_000, 900),
-        ),
-      ],
+      [input_from(ref_at(0), vault_utxo(5_000_000, 901, owing))],
+      [to(operator_key, 901)],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// Người lạ không đóng được kho, kể cả khi nghĩa vụ đã trả hết.
+test close_needs_the_operator_signature() {
+  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  !run(
+    settled,
+    Close,
+    tx(
+      [input_from(ref_at(0), vault_utxo(5_000_000, 900, settled))],
+      [to(stranger_key, 900)],
+      [stranger_key],
+      None,
+    ),
+  )
+}
+
+/// "Đóng" mà vẫn để lại một ô kho thì không phải đóng. Cho qua là mở đường dựng một ô
+/// kho mới với sổ bịa ra.
+test close_rejects_a_continuing_vault_output() {
+  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  let forged = VaultDatum { collected: 0, skimmed: 0 }
+  !run(
+    settled,
+    Close,
+    tx(
+      [input_from(ref_at(0), vault_utxo(5_000_000, 900, settled))],
+      [vault_utxo(2_000_000, 900, forged), to(operator_key, 0)],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// Nghĩa vụ làm tròn LÊN, và trần được trích làm tròn LÊN cùng chiều — nếu hai chỗ đó
+/// lệch nhau thì phần chênh không trích hết được và kho vĩnh viễn không đóng được.
+///
+/// Thu 1005 với 10%: nghĩa vụ đúng là 100,5 ⟹ phải trích 101, không phải 100.
+test the_obligation_rounds_up_and_stays_reachable() {
+  let before = VaultDatum { collected: 1_005, skimmed: 0 }
+  let after = VaultDatum { collected: 1_005, skimmed: 101 }
+  run(
+    before,
+    Skim { amount: 101 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_005, before))],
+      [vault_utxo(2_000_000, 904, after), skim_output(101)],
+      [],
+      None,
+    ),
+  )
+}
+
+/// Và sau khi trích đủ 101 thì kho đóng được — đó là vế thứ hai của bài trên, tách ra
+/// vì nó kiểm một hợp đồng khác: `Close` đòi `ceil(collected × bps) == skimmed`.
+test rounding_up_still_lets_the_vault_close() {
+  let settled = VaultDatum { collected: 1_005, skimmed: 101 }
+  run(
+    settled,
+    Close,
+    tx(
+      [input_from(ref_at(0), vault_utxo(5_000_000, 904, settled))],
+      [to(operator_key, 904)],
       [operator_key],
       None,
     ),

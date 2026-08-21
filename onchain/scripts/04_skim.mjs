@@ -16,8 +16,11 @@ if (utxos.length !== 1) throw new Error(`kho phải có đúng 1 UTxO, đang th�
 const vault = utxos[0];
 const before = Data.from(vault.datum, VaultDatum);
 
-// Nghĩa vụ = phần dưới của (collected × bps / 10000), trừ phần đã trích.
-const obligation = (before.collected * BigInt(SKIM_BPS)) / 10_000n - before.skimmed;
+// Nghĩa vụ = (collected × bps / 10000) LÀM TRÒN LÊN, trừ phần đã trích. Làm tròn lên
+// vì hợp đồng làm tròn lên; dùng phép chia thường ở đây là kịch bản tự trích thiếu một
+// đơn vị so với trần, và kho sẽ không bao giờ đóng lại được (`Close` đòi nghĩa vụ về 0).
+const obligation =
+  (before.collected * BigInt(SKIM_BPS) + 9_999n) / 10_000n - before.skimmed;
 if (obligation <= 0n) { console.log("không còn nghĩa vụ nào để trích"); process.exit(0); }
 
 const after = { collected: before.collected, skimmed: before.skimmed + obligation };
@@ -38,7 +41,16 @@ const tx = await lucid
   )
   .pay.ToContract(
     scripts.escrowAddress,
-    { kind: "inline", value: Data.to({ carp: obligation }, EscrowDatum) },
+    {
+      kind: "inline",
+      // `vault` ràng khoản trích này vào ĐÚNG instance kho phí đang chi; `parent: null`
+      // khai nó là khoản MỚI, không phải phần dư của một ô kho tạm nào. Sai một trong
+      // hai thì hợp đồng từ chối — xem `escrow_receives` trong `fee_vault.ak`.
+      value: Data.to(
+        { carp: obligation, vault: scripts.vaultHash, parent: null },
+        EscrowDatum,
+      ),
+    },
     { lovelace: 3_000_000n, [scripts.carpUnit]: obligation },
   )
   .complete();

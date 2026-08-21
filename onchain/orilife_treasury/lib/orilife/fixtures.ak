@@ -8,6 +8,7 @@ use cardano/transaction.{
   Datum, InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
   placeholder,
 }
+use orilife/types.{EscrowDatum}
 
 pub const carp_policy: PolicyId =
   #"11111111111111111111111111111111111111111111111111111111"
@@ -76,4 +77,11 @@ pub fn tx(
 
 pub fn inline(data: Data) -> Datum {
   InlineDatum(data)
+}
+
+/// Datum kho tạm. `parent = None` là khoản vừa được kho phí trích sang; `parent = Some(ref)`
+/// là phần dư của chính ô `ref`. Hai thứ đó KHÁC nhau và hợp đồng phải phân biệt được —
+/// gộp chúng lại chính là lỗ đã vá ở bản này.
+pub fn escrow_datum(carp: Int, parent: Option<OutputReference>) -> EscrowDatum {
+  EscrowDatum { carp, vault: vault_hash, parent }
 }
