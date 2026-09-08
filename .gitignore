@@ -26,3 +26,6 @@ _wt-*
 
 # LAMP pinned to a commit, materialised by scripts/pin-lamp.sh — never commit another repo's code here.
 vendor/lamp/
+
+# Nhà riêng của agent — ghi chú, thư nội bộ, tệp tự sinh. KHÔNG vào kho.
+_Agents/
