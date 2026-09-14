@@ -88,9 +88,23 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
 2. `src/tasks.ts:28` declares its own price catalogue to be a `PLACEHOLDER`. The fee catalogue
    actually running in production is
    `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
-3. Two generations of fee code live in this repository: `main` reuses the LAMP Treasury Collect
-   layer on Preview, while the branch `claude/hop-dong-phi-carp-preprod` carries a purpose-written
-   CARP validator on Preprod. Nothing in the tree states which one is current.
+3. Two generations of fee code live in this repository, and **both sit on `main`**. The older bridge
+   layer (`src/treasuryClient.ts`, `scripts/*_preview.ts`) reuses the LAMP Treasury Collect layer on
+   Preview. The current one is the purpose-written CARP validator under `onchain/`, merged in
+   `2b35232` on 2026-08-21: `onchain/orilife_treasury/validators/fee_vault.ak` and
+   `donation_escrow.ak`, driven by `onchain/scripts/01_mint_test_carp.mjs` through
+   `06_close_vault.mjs`. **The CARP generation on Preprod is the current one.**
+4. `onchain/scripts/deployed_preprod.json` records a lifecycle already executed end to end on
+   Preprod — mint, open, collect, skim, donate, close — each step carrying its transaction hash.
+   Its `previous` block records the failure of an earlier validator revision: that revision had no
+   `Close` branch and every branch forced `lovelace_of(out) >= lovelace_of(in)`, so 5,000,000
+   lovelace held at `addr_test1wrxmzy4…` cannot be withdrawn by any redeemer. The current revision
+   has `Close`, and `closeTx` is in the same file.
+5. This file said, until 2026-09-14, that the CARP validator lived on an unmerged branch named
+   `claude/hop-dong-phi-carp-preprod`. That was true when written and false two commits later. The
+   branch has been superseded: its `onchain/` tree is identical to `main`, and it lacks six files
+   `main` carries. A document that names a branch does not learn that the branch was merged — read
+   the tree, not this paragraph, when the answer has to be current.
 
 ## Relationship to MCR
 
