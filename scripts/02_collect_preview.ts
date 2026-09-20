@@ -18,7 +18,7 @@
 import { Data } from "@lucid-evolution/lucid";
 import {
   NETWORK, LAMP_POLICY_ID, LAMP_ASSET_NAME, LAMP_UNIT, INSTANCE_ID,
-  makeLucid, custodyValidator,
+  makeLucid, deployedCustodyValidator,
   explorerTx, awaitTx, loadDeployed,
 } from "./config_preview.js";
 import { decodeCustodyDatum } from "../vendor/lamp/Treasury/offchain/src/datum.js";
@@ -35,7 +35,10 @@ async function main(): Promise<void> {
 
   const lucid = await makeLucid();
   const state = loadDeployed();
-  const script = custodyValidator();
+  // deployedCustodyValidator(), NOT custodyValidator(): this script spends UTxOs that already
+  // exist, so it needs the validator whose hash those UTxOs were locked with. custodyValidator()
+  // now builds at the corrected Preview pace and hashes to a different, empty address.
+  const script = deployedCustodyValidator();
   const addr = await lucid.wallet().address();
   console.log("Wallet   :", addr);
   console.log("Custody  :", state.custody.address, "\n");

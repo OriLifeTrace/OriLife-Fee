@@ -57,17 +57,58 @@ export function loadCustodyCompiledCode(): string {
 
 /** Placeholder proposal_policy (28-byte hex) — Collect does not use it. */
 export const PROPOSAL_POLICY_PLACEHOLDER = "00".repeat(28);
-/** Milliseconds per epoch. */
-export const MS_PER_EPOCH_PREVIEW = 432_000_000n; // 5 testnet days per epoch
+/**
+ * Milliseconds per epoch on Preview. The Preview network runs ONE day per epoch; 432_000_000
+ * (five days) is Preprod's and mainnet's pace, and it does not belong on this network.
+ *
+ * This constant is an apply-param. Changing it changes the compiled script, so it changes the
+ * script hash, so it changes THE ADDRESS. That is why the wrong value here was never going to
+ * surface as an error: every transaction still builds, it just builds against a different
+ * instance, and nothing anywhere goes red.
+ */
+export const MS_PER_EPOCH_PREVIEW = 86_400_000n; // 1 Preview day per epoch
 
-/** Apply the custody validator with the canonical parameters. */
-export function custodyValidator(): Validator {
+/**
+ * What the custody instance CURRENTLY HOLDING ASSETS was applied with. This is a fact about the
+ * chain, not a choice — it is 432_000_000 because that is what the deploy used, and no edit here
+ * changes what is already on Preview.
+ *
+ * Kept as a separate named constant rather than deleted, because the assets are only reachable
+ * through a validator built with this value. Deleting it would not remove the old instance; it
+ * would only remove the way back to it.
+ */
+export const MS_PER_EPOCH_DEPLOYED = 432_000_000n; // the live instance, addr_test1wzz0u...
+
+function buildCustodyValidator(msPerEpoch: bigint): Validator {
   return {
     type: "PlutusV3",
     script: applyParamsToScript(loadCustodyCompiledCode(), [
-      PROPOSAL_POLICY_PLACEHOLDER, MS_PER_EPOCH_PREVIEW,
+      PROPOSAL_POLICY_PLACEHOLDER, msPerEpoch,
     ] as never),
   };
+}
+
+/**
+ * The custody validator at the CORRECT Preview pace. A deploy run today produces this one, at a
+ * NEW address that holds nothing yet.
+ *
+ * Do not use this to reach the assets already on chain — see deployedCustodyValidator().
+ */
+export function custodyValidator(): Validator {
+  return buildCustodyValidator(MS_PER_EPOCH_PREVIEW);
+}
+
+/**
+ * The custody validator matching the instance that holds assets today. This is the ONLY one whose
+ * hash matches those UTxOs, so it is the only one that can spend them.
+ *
+ * The two builders are separate functions, not one function with a flag, so that every call site
+ * has to say in its own text which instance it means. Before this split there was one builder and
+ * one constant, and a script could load the deployed address on one line and derive a different
+ * validator on the next — which is exactly what happened, and it produced no error of any kind.
+ */
+export function deployedCustodyValidator(): Validator {
+  return buildCustodyValidator(MS_PER_EPOCH_DEPLOYED);
 }
 
 export function custodyAddress(v: Validator): string {
@@ -105,11 +146,26 @@ export interface OriLifeDeployedState {
 }
 
 export function loadDeployed(): OriLifeDeployedState {
+  let state: OriLifeDeployedState;
   try {
-    return JSON.parse(readFileSync(DEPLOYED_PATH, "utf8")) as OriLifeDeployedState;
+    state = JSON.parse(readFileSync(DEPLOYED_PATH, "utf8")) as OriLifeDeployedState;
   } catch {
     throw new Error("no deployed_preview.json yet — run 01_deploy_custody_preview.ts first.");
   }
+  // Fail closed. The recorded address and deployedCustodyValidator() must agree, because a script
+  // that reads one and derives the other builds a transaction against an instance that does not
+  // hold the UTxOs it names — and that failure is silent: the build succeeds.
+  const derived = custodyAddress(deployedCustodyValidator());
+  if (state.custody.address !== derived) {
+    throw new Error(
+      "deployed_preview.json does not match deployedCustodyValidator().\n"
+      + `  recorded: ${state.custody.address}\n`
+      + `  derived : ${derived}\n`
+      + "Either MS_PER_EPOCH_DEPLOYED no longer describes the live instance, or the vendored "
+      + "blueprint was rebuilt (see scripts/pin-lamp.sh). Do not 'fix' this by editing the JSON "
+      + "to match the code — the JSON records what is on chain.");
+  }
+  return state;
 }
 
 export function saveDeployed(s: OriLifeDeployedState): void {
