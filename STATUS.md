@@ -88,6 +88,15 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
 2. `src/tasks.ts:28` declares its own price catalogue to be a `PLACEHOLDER`. The fee catalogue
    actually running in production is
    `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
+   The word `PLACEHOLDER` understates the gap, because it points at the numbers. Counted on
+   2026-09-21 against `orilife-core@0db96d7`, the two catalogues do not hold the same tasks either:
+   `src/tasks.ts` declares **9** keys, `TASK_CATALOG` declares **16**, and the 9 are a subset. Seven
+   tasks that production charges for are absent here entirely — `animal.verify`, `care.log`,
+   `care.lookup`, `fruit.identify`, `population.count`, `residue.alert`, `tree.verify_add`. A reader
+   told only that the values are simulated would reasonably assume the key set is right.
+   Reproduce both counts:
+   `grep -cE '^  "[a-z0-9._]+": \{' src/tasks.ts` here, and
+   `sed -n '/^TASK_CATALOG/,/^}/p' animal_fee.py | grep -cE '^    "[a-z0-9._]+"'` there.
 3. Two generations of fee code live in this repository, and **both sit on `main`**. The older bridge
    layer (`src/treasuryClient.ts`, `scripts/*_preview.ts`) reuses the LAMP Treasury Collect layer on
    Preview. The current one is the purpose-written CARP validator under `onchain/`, merged in
@@ -98,13 +107,18 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
    Preprod — mint, open, collect, skim, donate, close — each step carrying its transaction hash.
    Its `previous` block records the failure of an earlier validator revision: that revision had no
    `Close` branch and every branch forced `lovelace_of(out) >= lovelace_of(in)`, so 5,000,000
-   lovelace held at `addr_test1wrxmzy4…` cannot be withdrawn by any redeemer. The current revision
-   has `Close`, and `closeTx` is in the same file.
+   lovelace held at `addr_test1wrxmzy4…` cannot be withdrawn by any redeemer. The 900,000 tCARP at
+   the same address are not stranded — `Operate` still spends those; only the lovelace is. Both
+   halves belong here, because the loss decides nothing and the recoverable balance decides whether
+   anyone still has to go back for it. The current revision has `Close`, and `closeTx` is in the
+   same file.
 5. This file said, until 2026-09-14, that the CARP validator lived on an unmerged branch named
-   `claude/hop-dong-phi-carp-preprod`. That was true when written and false two commits later. The
-   branch has been superseded: its `onchain/` tree is identical to `main`, and it lacks six files
-   `main` carries. A document that names a branch does not learn that the branch was merged — read
-   the tree, not this paragraph, when the answer has to be current.
+   `claude/hop-dong-phi-carp-preprod`. That was true when written, false two commits later, and by
+   2026-09-21 the branch had been deleted outright — `OriLife-Fee` carries three branches, and that
+   is not one of them. The paragraph outlived the thing it named twice over, which is the point:
+   a document that names a branch does not learn that the branch was merged, and does not learn
+   that it was deleted either. When the answer has to be current, read the tree —
+   `git ls-tree -r main onchain/` — not this paragraph.
 
 ## Relationship to MCR
 
