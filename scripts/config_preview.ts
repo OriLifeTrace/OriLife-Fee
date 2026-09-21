@@ -57,17 +57,58 @@ export function loadCustodyCompiledCode(): string {
 
 /** Placeholder proposal_policy (28-byte hex) — Collect does not use it. */
 export const PROPOSAL_POLICY_PLACEHOLDER = "00".repeat(28);
-/** Milliseconds per epoch. */
-export const MS_PER_EPOCH_PREVIEW = 432_000_000n; // 5 testnet days per epoch
+/**
+ * Milliseconds per epoch on Preview. The Preview network runs ONE day per epoch; 432_000_000
+ * (five days) is Preprod's and mainnet's pace, and it does not belong on this network.
+ *
+ * This constant is an apply-param. Changing it changes the compiled script, so it changes the
+ * script hash, so it changes THE ADDRESS. That is why the wrong value here was never going to
+ * surface as an error: every transaction still builds, it just builds against a different
+ * instance, and nothing anywhere goes red.
+ */
+export const MS_PER_EPOCH_PREVIEW = 86_400_000n; // 1 Preview day per epoch
 
-/** Apply the custody validator with the canonical parameters. */
-export function custodyValidator(): Validator {
+/**
+ * What the custody instance CURRENTLY HOLDING ASSETS was applied with. This is a fact about the
+ * chain, not a choice — it is 432_000_000 because that is what the deploy used, and no edit here
+ * changes what is already on Preview.
+ *
+ * Kept as a separate named constant rather than deleted, because the assets are only reachable
+ * through a validator built with this value. Deleting it would not remove the old instance; it
+ * would only remove the way back to it.
+ */
+export const MS_PER_EPOCH_DEPLOYED = 432_000_000n; // the live instance, addr_test1wzz0u...
+
+function buildCustodyValidator(msPerEpoch: bigint): Validator {
   return {
     type: "PlutusV3",
     script: applyParamsToScript(loadCustodyCompiledCode(), [
-      PROPOSAL_POLICY_PLACEHOLDER, MS_PER_EPOCH_PREVIEW,
+      PROPOSAL_POLICY_PLACEHOLDER, msPerEpoch,
     ] as never),
   };
+}
+
+/**
+ * The custody validator at the CORRECT Preview pace. A deploy run today produces this one, at a
+ * NEW address that holds nothing yet.
+ *
+ * Do not use this to reach the assets already on chain — see deployedCustodyValidator().
+ */
+export function custodyValidator(): Validator {
+  return buildCustodyValidator(MS_PER_EPOCH_PREVIEW);
+}
+
+/**
+ * The custody validator matching the instance that holds assets today. This is the ONLY one whose
+ * hash matches those UTxOs, so it is the only one that can spend them.
+ *
+ * The two builders are separate functions, not one function with a flag, so that every call site
+ * has to say in its own text which instance it means. Before this split there was one builder and
+ * one constant, and a script could load the deployed address on one line and derive a different
+ * validator on the next — which is exactly what happened, and it produced no error of any kind.
+ */
+export function deployedCustodyValidator(): Validator {
+  return buildCustodyValidator(MS_PER_EPOCH_DEPLOYED);
 }
 
 export function custodyAddress(v: Validator): string {
@@ -104,12 +145,87 @@ export interface OriLifeDeployedState {
   genesis?: { txHash: string; outputIndex: number };
 }
 
-export function loadDeployed(): OriLifeDeployedState {
+/**
+ * The recorded network and the configured one must agree, and this check is NOT redundant with the
+ * address check that follows it.
+ *
+ * `networkToId()` in @lucid-evolution/utils maps Preview, Preprod and Custom all to 0, so the same
+ * script produces the SAME address string on all three. An address comparison therefore cannot tell
+ * those networks apart: point NETWORK at Preprod and every address still matches, while every
+ * transaction goes to a different chain. The recorded `network` field is the only thing in the file
+ * that carries the distinction, so it has to be read.
+ *
+ * Kept as a free function taking both values so it can be pinned by a test without importing an
+ * environment: it depends on its arguments and on nothing else.
+ */
+export function assertRecordedNetwork(recorded: Network, configured: Network): void {
+  if (recorded === configured) return;
+  throw new Error(
+    "deployed_preview.json records a different network than this process is configured for.\n"
+    + `  recorded: ${recorded}\n`
+    + `  NETWORK : ${configured}\n`
+    + "Addresses cannot catch this: Preview, Preprod and Custom share one network id, so the "
+    + "address check passes on all three. Set NETWORK to match the record, or use the "
+    + "deployment record for the network you meant.");
+}
+
+/** The custody address currently recorded, or null when there is no record yet. */
+export function recordedCustodyAddress(): string | null {
   try {
-    return JSON.parse(readFileSync(DEPLOYED_PATH, "utf8")) as OriLifeDeployedState;
+    const s = JSON.parse(readFileSync(DEPLOYED_PATH, "utf8")) as { custody?: { address?: string } };
+    return s.custody?.address ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refuse to overwrite the record of a DIFFERENT live instance.
+ *
+ * deployed_preview.json has exactly one `custody.address` slot, so it cannot describe two instances
+ * at once, and saveDeployed() is an unconditional writeFileSync. Once the epoch pace changed,
+ * custodyValidator() derives a new address — so a deploy run writes the new instance over the only
+ * record pointing at the one that holds the assets.
+ *
+ * Nothing about that failure is loud. The deploy itself succeeds; every later script then fails its
+ * address check against an instance that holds nothing, and the message on that check says "do not
+ * fix this by editing the JSON" — right for a drifted constant, wrong here, where restoring the JSON
+ * is exactly the fix. So the guard belongs at the write, before the misleading message is reached.
+ */
+export function assertNoOtherInstanceRecorded(recorded: string | null, aboutToDeploy: string): void {
+  if (!recorded || recorded === aboutToDeploy) return;
+  throw new Error(
+    "deployed_preview.json already records a DIFFERENT custody instance.\n"
+    + `  recorded: ${recorded}\n`
+    + `  about to deploy: ${aboutToDeploy}\n`
+    + "This file holds one address, so writing the new one discards the only pointer to the "
+    + "recorded instance and to whatever it still holds. If deploying a new instance is the "
+    + "intent, move the existing record aside first (it is tracked in git, so `git log` on the "
+    + "file recovers it); if it is not, check MS_PER_EPOCH_PREVIEW and the vendored blueprint.");
+}
+
+export function loadDeployed(): OriLifeDeployedState {
+  let state: OriLifeDeployedState;
+  try {
+    state = JSON.parse(readFileSync(DEPLOYED_PATH, "utf8")) as OriLifeDeployedState;
   } catch {
     throw new Error("no deployed_preview.json yet — run 01_deploy_custody_preview.ts first.");
   }
+  assertRecordedNetwork(state.network, NETWORK);
+  // Fail closed. The recorded address and deployedCustodyValidator() must agree, because a script
+  // that reads one and derives the other builds a transaction against an instance that does not
+  // hold the UTxOs it names — and that failure is silent: the build succeeds.
+  const derived = custodyAddress(deployedCustodyValidator());
+  if (state.custody.address !== derived) {
+    throw new Error(
+      "deployed_preview.json does not match deployedCustodyValidator().\n"
+      + `  recorded: ${state.custody.address}\n`
+      + `  derived : ${derived}\n`
+      + "Either MS_PER_EPOCH_DEPLOYED no longer describes the live instance, or the vendored "
+      + "blueprint was rebuilt (see scripts/pin-lamp.sh). Do not 'fix' this by editing the JSON "
+      + "to match the code — the JSON records what is on chain.");
+  }
+  return state;
 }
 
 export function saveDeployed(s: OriLifeDeployedState): void {
