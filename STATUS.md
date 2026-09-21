@@ -115,7 +115,7 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
    failing.
 2. `src/tasks.ts:28` declares its own price catalogue to be a `PLACEHOLDER`. The fee catalogue
    actually running in production is
-   `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
+   `orilife-core/MasterIdentify/core/animal_fee.py::TASK_CATALOG`.
    The word `PLACEHOLDER` understates the gap, because it points at the numbers. Counted on
    2026-09-21 against `orilife-core@e13e085`, the two catalogues do not hold the same tasks either:
    `src/tasks.ts` declares **9** keys, `TASK_CATALOG` declares **16**, and the 9 are a subset. Seven
@@ -158,7 +158,7 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
 
 **None.** This is the fee and accounting layer; it does not touch tree recognition. The production
 home of the live fee catalogue is
-`orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`, **not** `src/tasks.ts` here —
+`orilife-core/MasterIdentify/core/animal_fee.py::TASK_CATALOG`, **not** `src/tasks.ts` here —
 grepping all of `orilife-core` finds no caller pointing at this directory.
 
 OriLife agent
