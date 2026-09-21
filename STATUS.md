@@ -1,25 +1,53 @@
-# STATUS — measured 2026-08-21
+# STATUS — measured 2026-09-21 at `3a50684`
 
 This directory existed for a long time but had **never been under any git repository**
 (`git rev-parse` returned `fatal: not a git repository`). The first commit was made to **stop
 losing work**, not to declare anything finished. This file records what was measured, not what
 was hoped.
 
-## Actual size
+**Every count in this file is a copy of something the tree can be asked directly, so every count
+now carries the commit it was taken at and the command that takes it again.** That is not
+decoration — it is the repair for two different failures that this file was carrying at once until
+2026-09-21, and only one of them was the kind anyone was watching for.
 
-16 hand-written TypeScript files, **1671 lines**. Everything else in the directory is
-`node_modules/`, which is gitignored. There is no `.env` and no key anywhere in the tree; that was
-checked before the first `git add`.
+The visible one was drift. `54 / 54` and `57 / 57` were true on 2026-08-21 and false the moment the
+test file grew. The pull request that refreshed this paragraph was opened before the pull request
+that added those tests and merged after it, so nothing was ever wrong at the moment it was written
+and nothing was ever red. There is no review step that catches this, because there is no step: the
+number simply has no way to learn that its subject moved.
 
-## Checks — green (measured 2026-08-21)
+The other one had never been true at all. This file said **16** hand-written TypeScript files from
+its first commit; the repository has held **17** at every commit it has ever had, and not one `.ts`
+file has been added or deleted in that span (`git diff --name-status 2b35232 main -- '*.ts'` lists
+four modifications and nothing else). `1671 lines` was wrong on the day it was written too — the
+tree held 1686. A wrong count and a stale count are indistinguishable once written down, which is
+the argument for the command: a reader can re-run it in a second, and cannot re-derive a bare
+number at all.
+
+## Actual size — at `3a50684`, 2026-09-21
+
+17 hand-written TypeScript files, **1963 lines**. Everything else in the directory is
+`node_modules/` and `vendor/lamp/`, both gitignored. No secret file is tracked anywhere in the
+tree — the only dotfiles under version control are `.gitignore` (twice), `.github/workflows/ci.yml`
+and `.env.example`, which holds names and no values.
+
+Ask git, not the filesystem — `find` would also count whatever happens to be lying around untracked:
+
+```
+git ls-tree -r --name-only main | grep -c '\.ts$'
+git ls-tree -r --name-only main | grep '\.ts$' | while read f; do git show "main:$f"; done | wc -l
+git ls-tree -r --name-only main | grep -E '(^|/)\.[a-z]|\.(key|pem|pat|mnemonic)$'
+```
+
+## Checks — green at `3a50684`, 2026-09-21
 
 ```
 npx tsc --noEmit                                  → 0 errors      (needs vendor/lamp)
-npx vitest run                                    → 57 / 57 pass, 4 files
+npx vitest run                                    → 67 / 67 pass, 4 files
 npx tsc --noEmit -p tsconfig.core.json            → 0 errors      (no LAMP needed)
 npx vitest run tests/feeEngine.test.ts \
                tests/bridge.test.ts \
-               tests/custodyAddress.test.ts       → 54 / 54 pass, 3 files
+               tests/custodyAddress.test.ts       → 64 / 64 pass, 3 files
 ```
 
 The second pair is what CI runs, because CI has no copy of LAMP. The difference between the two —
@@ -89,7 +117,7 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
    actually running in production is
    `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
    The word `PLACEHOLDER` understates the gap, because it points at the numbers. Counted on
-   2026-09-21 against `orilife-core@0db96d7`, the two catalogues do not hold the same tasks either:
+   2026-09-21 against `orilife-core@e13e085`, the two catalogues do not hold the same tasks either:
    `src/tasks.ts` declares **9** keys, `TASK_CATALOG` declares **16**, and the 9 are a subset. Seven
    tasks that production charges for are absent here entirely — `animal.verify`, `care.log`,
    `care.lookup`, `fruit.identify`, `population.count`, `residue.alert`, `tree.verify_add`. A reader
@@ -114,11 +142,17 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
    same file.
 5. This file said, until 2026-09-14, that the CARP validator lived on an unmerged branch named
    `claude/hop-dong-phi-carp-preprod`. That was true when written, false two commits later, and by
-   2026-09-21 the branch had been deleted outright — `OriLife-Fee` carries three branches, and that
-   is not one of them. The paragraph outlived the thing it named twice over, which is the point:
-   a document that names a branch does not learn that the branch was merged, and does not learn
-   that it was deleted either. When the answer has to be current, read the tree —
-   `git ls-tree -r main onchain/` — not this paragraph.
+   2026-09-21 the branch had been deleted outright. The paragraph outlived the thing it named twice
+   over, which is the point: a document that names a branch does not learn that the branch was
+   merged, and does not learn that it was deleted either. When the answer has to be current, read
+   the tree — `git ls-tree -r main onchain/` — not this paragraph.
+
+   The same paragraph then repeated the mistake in miniature. Until 2026-09-21 it read *"`OriLife-Fee`
+   carries three branches, and that is not one of them"*, which was a second count with nothing
+   holding it to the repository: two of those three were merged and deleted within hours of being
+   counted, and today `git ls-remote --heads origin` returns `main` alone. The sentence needed the
+   branch to be gone, not the number to be three — so the number is out, and the command that
+   answers the question stays.
 
 ## Relationship to MCR
 
