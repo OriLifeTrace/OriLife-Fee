@@ -9,6 +9,7 @@ import {
   NETWORK, LAMP_POLICY_ID, LAMP_ASSET_NAME,
   makeLucid, custodyValidator, custodyAddress,
   explorerTx, awaitTx, saveDeployed,
+  recordedCustodyAddress, assertNoOtherInstanceRecorded,
 } from "./config_preview.js";
 import { custodyDatumToCbor } from "../vendor/lamp/Treasury/offchain/src/datum.js";
 import { seedDatumOk } from "../vendor/lamp/Treasury/offchain/src/collect.js";
@@ -31,6 +32,10 @@ async function main(): Promise<void> {
   const script = custodyValidator();
   const custAddr = custodyAddress(script);
   console.log("Custody address :", custAddr);
+
+  // Refuse to overwrite the record of a DIFFERENT live instance. The reasoning, and the guard
+  // itself, live in config_preview.ts next to saveDeployed() — the write this protects.
+  assertNoOtherInstanceRecorded(recordedCustodyAddress(), custAddr);
 
   // Seed datum: cut_bps=10000, an empty ledger, LAMP as the accepted asset.
   const seedDatum: CustodyDatum = {

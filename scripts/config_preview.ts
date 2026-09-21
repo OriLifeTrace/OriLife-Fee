@@ -145,6 +145,65 @@ export interface OriLifeDeployedState {
   genesis?: { txHash: string; outputIndex: number };
 }
 
+/**
+ * The recorded network and the configured one must agree, and this check is NOT redundant with the
+ * address check that follows it.
+ *
+ * `networkToId()` in @lucid-evolution/utils maps Preview, Preprod and Custom all to 0, so the same
+ * script produces the SAME address string on all three. An address comparison therefore cannot tell
+ * those networks apart: point NETWORK at Preprod and every address still matches, while every
+ * transaction goes to a different chain. The recorded `network` field is the only thing in the file
+ * that carries the distinction, so it has to be read.
+ *
+ * Kept as a free function taking both values so it can be pinned by a test without importing an
+ * environment: it depends on its arguments and on nothing else.
+ */
+export function assertRecordedNetwork(recorded: Network, configured: Network): void {
+  if (recorded === configured) return;
+  throw new Error(
+    "deployed_preview.json records a different network than this process is configured for.\n"
+    + `  recorded: ${recorded}\n`
+    + `  NETWORK : ${configured}\n`
+    + "Addresses cannot catch this: Preview, Preprod and Custom share one network id, so the "
+    + "address check passes on all three. Set NETWORK to match the record, or use the "
+    + "deployment record for the network you meant.");
+}
+
+/** The custody address currently recorded, or null when there is no record yet. */
+export function recordedCustodyAddress(): string | null {
+  try {
+    const s = JSON.parse(readFileSync(DEPLOYED_PATH, "utf8")) as { custody?: { address?: string } };
+    return s.custody?.address ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refuse to overwrite the record of a DIFFERENT live instance.
+ *
+ * deployed_preview.json has exactly one `custody.address` slot, so it cannot describe two instances
+ * at once, and saveDeployed() is an unconditional writeFileSync. Once the epoch pace changed,
+ * custodyValidator() derives a new address — so a deploy run writes the new instance over the only
+ * record pointing at the one that holds the assets.
+ *
+ * Nothing about that failure is loud. The deploy itself succeeds; every later script then fails its
+ * address check against an instance that holds nothing, and the message on that check says "do not
+ * fix this by editing the JSON" — right for a drifted constant, wrong here, where restoring the JSON
+ * is exactly the fix. So the guard belongs at the write, before the misleading message is reached.
+ */
+export function assertNoOtherInstanceRecorded(recorded: string | null, aboutToDeploy: string): void {
+  if (!recorded || recorded === aboutToDeploy) return;
+  throw new Error(
+    "deployed_preview.json already records a DIFFERENT custody instance.\n"
+    + `  recorded: ${recorded}\n`
+    + `  about to deploy: ${aboutToDeploy}\n`
+    + "This file holds one address, so writing the new one discards the only pointer to the "
+    + "recorded instance and to whatever it still holds. If deploying a new instance is the "
+    + "intent, move the existing record aside first (it is tracked in git, so `git log` on the "
+    + "file recovers it); if it is not, check MS_PER_EPOCH_PREVIEW and the vendored blueprint.");
+}
+
 export function loadDeployed(): OriLifeDeployedState {
   let state: OriLifeDeployedState;
   try {
@@ -152,6 +211,7 @@ export function loadDeployed(): OriLifeDeployedState {
   } catch {
     throw new Error("no deployed_preview.json yet — run 01_deploy_custody_preview.ts first.");
   }
+  assertRecordedNetwork(state.network, NETWORK);
   // Fail closed. The recorded address and deployedCustodyValidator() must agree, because a script
   // that reads one and derives the other builds a transaction against an instance that does not
   // hold the UTxOs it names — and that failure is silent: the build succeeds.
