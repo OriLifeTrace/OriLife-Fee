@@ -132,7 +132,7 @@ swapped for the Blockfrost provider and a real wallet.
   (H-2); wiring MAGIC ConsumeMAGIC/AppEconomics; paying LampNet nodes through Release + vesting.
 - **Integration**: orilife-core (Python) does not call this TypeScript layer yet — neither through
   an HTTP gateway nor as a service. The live fee catalogue is still
-  `orilife-core/MassTreeIdentify/core/animal_fee.py::TASK_CATALOG`.
+  `orilife-core/MasterIdentify/core/animal_fee.py::TASK_CATALOG`.
 - **Risk**: the economic parameters here are simulation placeholders, to be set by the DAO later;
   and the absolute cap of 100 USD per task needs DAO confirmation per asset class.
 
