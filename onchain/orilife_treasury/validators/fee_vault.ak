@@ -40,16 +40,35 @@
 ////    ⟹ ADA giữ chỗ vào một chiều, nằm lại vĩnh viễn. Thêm `Close`, và nó cũng là đường
 ////    xoay `operator_key`: khoá là tham số biên dịch nên xoay khoá = dựng instance mới,
 ////    mà instance cũ trước đây không đóng lại được.
+////
+//// 5. Mọi phép so về NƠI ĐẾN chỉ chạm `payment_credential`, tức phần uỷ quyền của địa
+////    chỉ là một trường TỰ DO. `Address` có hai phần: cùng băm script mà khác phần uỷ
+////    quyền là HAI địa chỉ trên chuỗi, cả hai đều chạy đúng validator này. Ghép với
+////    `Collect` — nhánh cố ý KHÔNG đòi chữ ký ai — thì bất kỳ ai cầm một chút CARP và
+////    phí giao dịch cũng đẩy được ô kho sang một địa chỉ khác: tài sản không mất (vẫn
+////    trong script), nhưng `utxosAt(<địa chỉ kho>)` mất dấu nó, mà đó đúng là cách cả
+////    bốn kịch bản vận hành trong `onchain/scripts/` tìm ô kho. Kẻ dựng giao dịch còn
+////    hưởng phần thưởng uỷ quyền trên toàn bộ ADA giữ chỗ, lặp lại mỗi epoch.
+////
+////    Nay ô kho đi ra phải ở ĐÚNG địa chỉ của ô kho đi vào (`own_input.output.address`),
+////    và khoản trích phải ở đúng địa chỉ kho tạm trọn vẹn. Neo vào địa chỉ của chính ô
+////    đang tiêu chứ không vào một hằng — băm của chính mình là một vòng vô tận, và một
+////    hằng sẽ nói sai ngay khi kho được deploy ở dạng địa chỉ khác.
+////
+////    Cùng họ: `reference_script` của ô kho đi ra cũng là một trường không phép so nào
+////    chạm tới, nên ai cũng đính được một script lớn vào ô kho qua `Collect`. Không mất
+////    tiền (kẻ đính tự trả min-ADA), nhưng mọi lượt tiêu sau phải chở thêm khối byte đó.
+////    Nay ô kho đi ra phải có `reference_script == None`.
 //// ─────────────────────────────────────────────────────────────────────────────
 
 use aiken/collection/list
-use cardano/address.{Script, from_verification_key}
+use cardano/address.{Script, from_script, from_verification_key}
 use cardano/assets.{AssetName, PolicyId, lovelace_of, quantity_of}
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
 use orilife/fixtures.{
   carp_name, carp_policy, escrow_datum, escrow_hash, inline, input_from,
-  operator_key, ref_at, script_output, skim_bps, stranger_key, tx,
-  value_with_carp, vault_hash, wallet_output,
+  operator_key, ref_at, rehomed_script_output, script_output, skim_bps,
+  stranger_key, tx, value_with_carp, vault_hash, wallet_output,
 }
 use orilife/math.{ceil_div}
 use orilife/types.{
@@ -86,6 +105,11 @@ validator fee_vault(
         tx.inputs,
         fn(input) { input.output.address.payment_credential == Script(own_hash) },
       )
+    // Phép LỌC ở đây cố ý RỘNG — chỉ theo `payment_credential`, không theo địa chỉ đầy
+    // đủ. Hai chiều có đáp án ngược nhau và đừng gộp chúng: lọc rộng là thứ bắt được
+    // MỌI đầu ra chạy script này, kể cả đầu ra dời nhà, nên `Close` (đòi 0 đầu ra) và
+    // `expect [continuing]` (đòi đúng 1) không bị lách bằng cách đổi phần uỷ quyền.
+    // Việc ghim NƠI ĐẾN thì làm riêng, bằng một phép so địa chỉ ĐẦY ĐỦ ở `shape_ok`.
     let own_outputs =
       list.filter(
         tx.outputs,
@@ -126,6 +150,17 @@ validator fee_vault(
 
         let shape_ok = and {
             base_ok,
+            // Ô kho phải ở lại ĐÚNG địa chỉ cũ — cả phần thanh toán lẫn phần uỷ quyền.
+            // So `payment_credential` thôi là để trống phần uỷ quyền cho kẻ dựng giao
+            // dịch điền, và `Collect` không đòi chữ ký ai nên "kẻ dựng giao dịch" là
+            // bất kỳ ai. Neo vào ô đang tiêu, không vào hằng.
+            continuing.address == own_input.output.address,
+            // Ô kho không mang reference script. `Collect` không đòi chữ ký ai, nên để trống
+            // trường này là cho bất kỳ ai đính một script lớn vào ô kho: không mất tiền (kẻ
+            // đính tự trả min-ADA, `Close` rút lại được), nhưng mọi lượt tiêu sau phải chở
+            // thêm khối byte đó. Không kịch bản nào trong `onchain/scripts/` dùng ô kho làm
+            // chỗ để script — cả ba đều `attach.SpendingValidator` trực tiếp.
+            continuing.reference_script == None,
             // Kho không được rút cạn ADA giữ chỗ — hết ADA là UTxO không tồn tại được.
             // ADA chỉ có đường vào; đường ra duy nhất là `Close`.
             lovelace_of(continuing.value) >= lovelace_of(own_input.output.value),
@@ -194,10 +229,16 @@ fn find_input(inputs: List<Input>, own_ref: OutputReference) -> Option<Input> {
   list.find(inputs, fn(input) { input.output_reference == own_ref })
 }
 
-/// Đúng một UTxO đi về kho tạm, mang đúng `amount` CARP, khai đúng con số đó, khai đúng
-/// băm kho phí đã trích ra nó, và khai mình là khoản MỚI (`parent = None`).
+/// Đúng một UTxO đi về kho tạm, ĐẬU ĐÚNG ĐỊA CHỈ kho tạm, mang đúng `amount` CARP, khai
+/// đúng con số đó, khai đúng băm kho phí đã trích ra nó, và khai mình là khoản MỚI
+/// (`parent = None`).
 ///
-/// Ba lời khai chứ không phải một, và mỗi cái chặn một thứ khác nhau:
+/// Bốn lời khai chứ không phải một, và mỗi cái chặn một thứ khác nhau:
+///   * `address == from_script(escrow_hash)` — chặn khoản trích đậu ở một địa chỉ khác
+///     mang cùng băm script. Kho tạm được dựng bằng `validatorToAddress(NETWORK, script)`
+///     (`onchain/scripts/common.mjs`), tức địa chỉ enterprise KHÔNG phần uỷ quyền, và
+///     `05_swap_and_donate.mjs` tìm nó bằng `utxosAt(escrowAddress)`. Thiếu câu này thì
+///     `Skim` đẩy được tiền tới một địa chỉ mà chính đường nộp kho bạc không tìm ra.
 ///   * `carp == amount` — chặn khai lệch để lần sau rời kho tạm rẻ hơn thực tế;
 ///   * `vault == own_hash` — chặn hai instance kho phí dùng chung MỘT khoản trích;
 ///   * `parent == None` — chặn khoản trích tự nhận là "phần dư" của một ô kho tạm nào đó,
@@ -220,6 +261,7 @@ fn escrow_receives(
       expect InlineDatum(raw) = only.datum
       expect EscrowDatum { carp, vault, parent }: EscrowDatum = raw
       and {
+        only.address == from_script(escrow_hash),
         quantity_of(only.value, policy, name) == amount,
         carp == amount,
         vault == own_hash,
@@ -268,6 +310,27 @@ fn skim_output(carp: Int) -> Output {
 
 fn to(key: ByteArray, carp: Int) -> Output {
   wallet_output(from_verification_key(key), value_with_carp(2_000_000, carp))
+}
+
+/// Ô kho ĐI RA ở cùng băm script nhưng gắn phần uỷ quyền của một khoá lạ — tức một địa
+/// chỉ KHÁC trên chuỗi, vẫn chạy đúng validator này.
+fn rehomed_vault_utxo(lovelace: Int, carp: Int, d: VaultDatum) -> Output {
+  rehomed_script_output(
+    vault_hash,
+    stranger_key,
+    value_with_carp(lovelace, carp),
+    inline(d),
+  )
+}
+
+/// Khoản trích đi về đúng băm kho tạm nhưng ở một địa chỉ dời nhà.
+fn rehomed_skim_output(carp: Int) -> Output {
+  rehomed_script_output(
+    escrow_hash,
+    stranger_key,
+    value_with_carp(2_000_000, carp),
+    inline(escrow_datum(carp, None)),
+  )
 }
 
 /// Nộp phí: `collected` tăng đúng bằng lượng CARP thật sự chảy vào.
@@ -624,6 +687,150 @@ test rounding_up_still_lets_the_vault_close() {
     tx(
       [input_from(ref_at(0), vault_utxo(5_000_000, 904, settled))],
       [to(operator_key, 904)],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ĐỊA CHỈ ĐẦY ĐỦ, KHÔNG PHẢI BĂM SCRIPT
+//
+// Sáu bài dưới đây đi theo CẶP: mỗi bài âm khác bài dương của nó ĐÚNG MỘT THỨ —
+// phần uỷ quyền của một địa chỉ. Không có cặp thì một bài âm đỏ không chứng minh
+// được nó đỏ vì điều đang định ghim, nó có thể đỏ vì bất cứ chốt nào khác trên
+// đường đi.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// CỰC DƯƠNG. Ô kho đi ra ở ĐÚNG địa chỉ ô kho đi vào: qua.
+///
+/// Giống hệt bài âm ngay dưới, khác đúng phần uỷ quyền của địa chỉ đầu ra.
+test collect_passes_when_the_vault_stays_at_its_exact_address() {
+  let before = VaultDatum { collected: 0, skimmed: 0 }
+  let after = VaultDatum { collected: 500, skimmed: 0 }
+  run(
+    before,
+    Collect { amount: 500 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 0, before))],
+      [vault_utxo(2_000_000, 500, after)],
+      [],
+      None,
+    ),
+  )
+}
+
+/// CỰC ÂM — ĐÂY LÀ BÀI CỦA LỖ ĐÃ VÁ.
+///
+/// `Collect` không đòi chữ ký ai, cố ý. Nên nếu nơi đến chỉ bị soi theo băm script thì
+/// bất kỳ ai cầm một chút CARP và phí giao dịch cũng đẩy được ô kho sang một địa chỉ
+/// khác cùng băm: tài sản không rời script, nhưng `utxosAt(vaultAddress)` — cách cả bốn
+/// kịch bản trong `onchain/scripts/` tìm ô kho — mất dấu nó, và phần thưởng uỷ quyền
+/// trên toàn bộ ADA giữ chỗ chảy về khoá của kẻ dựng giao dịch, lặp mỗi epoch.
+test collect_cannot_rehome_the_vault_to_another_stake_credential() {
+  let before = VaultDatum { collected: 0, skimmed: 0 }
+  let after = VaultDatum { collected: 500, skimmed: 0 }
+  !run(
+    before,
+    Collect { amount: 500 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 0, before))],
+      [rehomed_vault_utxo(2_000_000, 500, after)],
+      [],
+      None,
+    ),
+  )
+}
+
+/// CỰC ÂM. Cùng hình dạng với bài dương `collect_passes_when_the_vault_stays_at_its_exact_address`,
+/// khác đúng một thứ: ô kho đi ra mang một reference script do kẻ dựng giao dịch đính vào.
+test collect_cannot_attach_a_reference_script_to_the_vault() {
+  let before = VaultDatum { collected: 0, skimmed: 0 }
+  let after = VaultDatum { collected: 500, skimmed: 0 }
+  let loaded =
+    Output {
+      ..vault_utxo(2_000_000, 500, after),
+      reference_script: Some(#"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
+    }
+  !run(
+    before,
+    Collect { amount: 500 },
+    tx([input_from(ref_at(0), vault_utxo(2_000_000, 0, before))], [loaded], [], None),
+  )
+}
+
+/// CỰC ÂM. Chữ ký vận hành cũng không mua được quyền dời nhà — `Operate` đi qua đúng
+/// `shape_ok` như mọi nhánh tiếp-tục khác. Bài dương của cặp này là
+/// `operate_may_spend_above_the_reserve`.
+test operate_cannot_rehome_the_vault() {
+  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  !run(
+    state,
+    Operate,
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, state))],
+      [rehomed_vault_utxo(2_000_000, 100, state), to(operator_key, 900)],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// CỰC ÂM. Nhánh `Skim` cũng vậy. Bài dương của cặp là `skim_moves_exactly_the_obligation`
+/// — khác đúng phần uỷ quyền của ô kho đi ra.
+test skim_cannot_rehome_the_vault() {
+  let before = VaultDatum { collected: 1_000, skimmed: 0 }
+  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  !run(
+    before,
+    Skim { amount: 100 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
+      [rehomed_vault_utxo(2_000_000, 900, after), skim_output(100)],
+      [],
+      None,
+    ),
+  )
+}
+
+/// CỰC ÂM, chiều KHÁC: lần này ô kho đi ra đúng chỗ, nhưng KHOẢN TRÍCH đi tới một địa
+/// chỉ dời nhà mang cùng băm kho tạm.
+///
+/// Hại ở đây nặng hơn dời ô kho: `05_swap_and_donate.mjs` tìm khoản trích bằng
+/// `utxosAt(escrowAddress)` và từ chối chạy khi không thấy đúng một UTxO. Nên một khoản
+/// trích đậu lệch địa chỉ là một khoản `skimmed` đã ghi vào sổ mà đường nộp kho bạc
+/// không với tới — nghĩa vụ coi như đã trả trong sổ, chưa trả trên thực tế.
+test skim_cannot_send_the_obligation_to_a_rehomed_escrow() {
+  let before = VaultDatum { collected: 1_000, skimmed: 0 }
+  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  !run(
+    before,
+    Skim { amount: 100 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
+      [vault_utxo(2_000_000, 900, after), rehomed_skim_output(100)],
+      [],
+      None,
+    ),
+  )
+}
+
+/// CỰC ÂM cho phép LỌC, không cho phép so.
+///
+/// `Close` đòi KHÔNG ô kho nào đi ra. Bài này ghim việc bộ lọc `own_outputs` phải giữ
+/// nguyên độ RỘNG (chỉ theo băm script): thu hẹp nó về so-địa-chỉ-đầy-đủ — một việc dọn
+/// dẹp nghe rất hợp lý sau khi đọc bản vá ở trên — thì một ô kho dời nhà không còn bị
+/// đếm nữa, và `Close` trở thành đường dựng một ô kho mới với sổ bịa ra. Cặp của bài này
+/// là `close_rejects_a_continuing_vault_output`.
+test close_rejects_a_rehomed_continuing_vault_output() {
+  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  let forged = VaultDatum { collected: 0, skimmed: 0 }
+  !run(
+    settled,
+    Close,
+    tx(
+      [input_from(ref_at(0), vault_utxo(5_000_000, 900, settled))],
+      [rehomed_vault_utxo(2_000_000, 900, forged), to(operator_key, 0)],
       [operator_key],
       None,
     ),

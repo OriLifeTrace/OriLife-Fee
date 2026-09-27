@@ -34,16 +34,24 @@
 //// dư của ô nào (`parent`). Loại (b) khai `parent = None`, nên nó không những không được
 //// đếm là `trả_lại` mà còn làm cả giao dịch hỏng — `Skim` và `Donate` không còn ghép
 //// chung được nữa. Hai luồng tách hẳn, và `released` không còn cách nào bị thổi phồng.
+////
+//// LỖ THỨ HAI, VÁ CÙNG ĐỢT: phần dư chỉ bị soi theo `payment_credential`, nên phần uỷ
+//// quyền của địa chỉ là một trường tự do. Cùng băm script mà khác phần uỷ quyền là HAI
+//// địa chỉ trên chuỗi. `Donate` cố ý KHÔNG đòi chữ ký ai, nên bất kỳ ai cũng tiêu ô kho
+//// tạm, nộp sàn cho một mẩu CARP rồi trả phần dư về một địa chỉ dời nhà: tiền vẫn nằm
+//// trong script, nhưng `utxosAt(escrowAddress)` của `05_swap_and_donate.mjs` không thấy
+//// nó nữa, và phần thưởng uỷ quyền trên ADA giữ chỗ chảy về khoá của kẻ đó. Nay mỗi
+//// phần dư phải đậu ĐÚNG địa chỉ của ô đang tiêu.
 //// ─────────────────────────────────────────────────────────────────────────────
 
 use aiken/collection/list
-use cardano/address.{Script, from_verification_key}
+use cardano/address.{Address, Script, from_verification_key}
 use cardano/assets.{AssetName, PolicyId, quantity_of}
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
 use orilife/fixtures.{
   carp_name, carp_policy, escrow_datum, escrow_hash, inline, input_from,
-  operator_key, ref_at, script_output, tx, value_with_carp, vault_hash,
-  wallet_output,
+  operator_key, ref_at, rehomed_script_output, script_output, stranger_key, tx,
+  value_with_carp, vault_hash, wallet_output,
 }
 use orilife/math.{ceil_div}
 use orilife/types.{Donate, EscrowDatum, EscrowRedeemer}
@@ -85,9 +93,11 @@ validator donation_escrow(
     // Giá trị thật đang nằm ở đây. Không tin `declared`, chỉ dùng nó để bắt lời khai lệch.
     let held = quantity_of(own_input.output.value, carp_policy, carp_name)
 
-    // MỌI output ở địa chỉ này, không lọc gì thêm — rồi bắt từng cái phải tự khai mình
-    // là phần dư của ĐÚNG ô đang tiêu. Cái nào không khai được thì cả giao dịch hỏng.
-    // Đây là chỗ chặn khoản `Skim` mới đi lẫn vào phép đo.
+    // MỌI output chạy script này — lọc theo BĂM, không theo địa chỉ đầy đủ, cố ý rộng
+    // để không đầu ra nào lọt khỏi tầm soát bằng cách đổi phần uỷ quyền. Rồi bắt từng
+    // cái phải tự khai mình là phần dư của ĐÚNG ô đang tiêu VÀ đậu đúng địa chỉ của ô
+    // đó. Cái nào không khai được thì cả giao dịch hỏng. Đây là chỗ chặn khoản `Skim`
+    // mới đi lẫn vào phép đo, và cũng là chỗ chặn phần dư dời nhà.
     let at_self =
       list.filter(
         tx.outputs,
@@ -105,7 +115,14 @@ validator donation_escrow(
       released > 0,
       min_lovelace_per_carp > 0,
       donation_at_least(tx, required),
-      continuing_honest(at_self, own_ref, own_vault, carp_policy, carp_name),
+      continuing_honest(
+        at_self,
+        own_ref,
+        own_input.output.address,
+        own_vault,
+        carp_policy,
+        carp_name,
+      ),
     }
   }
 
@@ -126,14 +143,20 @@ fn sum_carp(outputs: List<Output>, policy: PolicyId, name: AssetName) -> Int {
   )
 }
 
-/// Mỗi UTxO ở địa chỉ kho tạm trong giao dịch này phải:
-///   1. khai đúng số CARP nó giữ — bỏ câu này thì một lần nộp có thể để lại một UTxO
+/// Mỗi UTxO ở băm script kho tạm trong giao dịch này phải:
+///   1. đậu ĐÚNG địa chỉ của ô đang tiêu — cả phần thanh toán lẫn phần uỷ quyền. Bộ lọc
+///      `at_self` cố ý chỉ so phần thanh toán để không đầu ra nào lọt khỏi tầm soát; câu
+///      này mới là câu ghim nơi đến. Thiếu nó thì phần dư dời sang một địa chỉ khác cùng
+///      băm: tiền không mất, nhưng `utxosAt(escrowAddress)` mất dấu và phần thưởng uỷ
+///      quyền trên ADA giữ chỗ chảy về khoá của kẻ dựng giao dịch;
+///   2. khai đúng số CARP nó giữ — bỏ câu này thì một lần nộp có thể để lại một UTxO
 ///      khai 0 trong khi giữ đầy CARP, và lần sau nó rời kho không tốn gì;
-///   2. giữ nguyên băm kho phí đã trích ra khoản gốc — không cho đổi chủ giữa đường;
-///   3. khai `parent` đúng bằng ô đang tiêu — đây là câu tách phần DƯ khỏi khoản MỚI.
+///   3. giữ nguyên băm kho phí đã trích ra khoản gốc — không cho đổi chủ giữa đường;
+///   4. khai `parent` đúng bằng ô đang tiêu — đây là câu tách phần DƯ khỏi khoản MỚI.
 fn continuing_honest(
   outputs: List<Output>,
   own_ref: OutputReference,
+  own_address: Address,
   own_vault: ByteArray,
   policy: PolicyId,
   name: AssetName,
@@ -145,6 +168,7 @@ fn continuing_honest(
         InlineDatum(raw) -> {
           expect EscrowDatum { carp, vault, parent }: EscrowDatum = raw
           and {
+            output.address == own_address,
             carp == quantity_of(output.value, policy, name),
             vault == own_vault,
             parent == Some(own_ref),
@@ -442,4 +466,83 @@ test escrow_rejects_a_no_op_spend() {
 test escrow_datum_carries_the_vault_hash() {
   let EscrowDatum { vault, .. } = escrow_datum(1, None)
   vault == vault_hash
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ĐỊA CHỈ ĐẦY ĐỦ, KHÔNG PHẢI BĂM SCRIPT
+//
+// Cùng lỗ với `fee_vault.ak`, cùng đợt vá. Hai bài dưới đây là một CẶP: chúng
+// khác nhau đúng một thứ — phần uỷ quyền của địa chỉ phần dư.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Phần DƯ đậu ở một địa chỉ dời nhà: cùng băm script kho tạm, khác phần uỷ quyền.
+fn rehomed_remainder_utxo(lovelace: Int, carp: Int) -> Output {
+  rehomed_script_output(
+    escrow_hash,
+    stranger_key,
+    value_with_carp(lovelace, carp),
+    inline(escrow_datum(carp, Some(ref_at(0)))),
+  )
+}
+
+/// CỰC DƯƠNG. Phần dư ở ĐÚNG địa chỉ ô đang tiêu: qua.
+///
+/// Giống hệt bài âm ngay dưới, khác đúng phần uỷ quyền của địa chỉ phần dư. (Trùng hình
+/// dạng với `donate_allows_a_partial_release`; giữ riêng để cặp âm–dương nằm cạnh nhau
+/// và không ai phải đi tìm bài dương ở chỗ khác mới đọc được phép đo.)
+test partial_release_passes_when_the_remainder_stays_at_its_exact_address() {
+  run(
+    thousand_carp,
+    tx(
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [remainder_utxo(2_000_000, 600 * carp_one), to_operator(400 * carp_one)],
+      [],
+      Some(200_000),
+    ),
+  )
+}
+
+/// CỰC ÂM — BÀI CỦA LỖ ĐÃ VÁ.
+///
+/// `Donate` cố ý không đòi chữ ký ai, nên "kẻ dựng giao dịch" là bất kỳ ai. Không có
+/// phép so địa chỉ đầy đủ thì họ nộp sàn cho một phần nhỏ rồi trả toàn bộ phần còn lại
+/// về một địa chỉ cùng băm nhưng khác phần uỷ quyền: CARP vẫn nằm trong script, nhưng
+/// `utxosAt(escrowAddress)` trong `05_swap_and_donate.mjs` không thấy nó nữa — kịch bản
+/// đó dừng ngay ở câu "kho tạm phải có đúng 1 UTxO" — và phần thưởng uỷ quyền trên ADA
+/// giữ chỗ chảy về khoá của họ.
+test partial_release_cannot_rehome_the_remainder() {
+  !run(
+    thousand_carp,
+    tx(
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [
+        rehomed_remainder_utxo(2_000_000, 600 * carp_one),
+        to_operator(400 * carp_one),
+      ],
+      [],
+      Some(200_000),
+    ),
+  )
+}
+
+/// Và bộ lọc `at_self` phải giữ nguyên độ RỘNG (chỉ theo băm script).
+///
+/// Thu hẹp nó về so-địa-chỉ-đầy-đủ thì phần dư dời nhà rơi HẲN ra khỏi phép đo: nó không
+/// bị `continuing_honest` soi nữa, mà cũng không được đếm vào `returned` — nên `released`
+/// phình lên và giao dịch chỉ đơn giản đòi nộp nhiều hơn. Kẻ tấn công trả đủ số đó là
+/// dời được nhà. Bài này bắt đúng biến thể ấy: nộp ĐỦ SÀN cho cả 1000 CARP mà vẫn phải
+/// hỏng, vì phần dư 600 không được đậu lệch địa chỉ dù có trả bao nhiêu đi nữa.
+test rehomed_remainder_stays_rejected_even_when_the_floor_is_paid_in_full() {
+  !run(
+    thousand_carp,
+    tx(
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [
+        rehomed_remainder_utxo(2_000_000, 600 * carp_one),
+        to_operator(400 * carp_one),
+      ],
+      [],
+      Some(500_000),
+    ),
+  )
 }

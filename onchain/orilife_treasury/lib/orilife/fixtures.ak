@@ -2,7 +2,7 @@
 //// không lẫn với việc lắp ráp dữ liệu.
 
 use aiken/interval
-use cardano/address.{Address, from_script}
+use cardano/address.{Address, from_script, with_delegation_key}
 use cardano/assets.{AssetName, PolicyId, Value, add, from_lovelace}
 use cardano/transaction.{
   Datum, InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
@@ -46,6 +46,27 @@ pub fn script_output(hash: ByteArray, value: Value, datum: Datum) -> Output {
 
 pub fn wallet_output(address: Address, value: Value) -> Output {
   Output { address, value, datum: NoDatum, reference_script: None }
+}
+
+/// Đầu ra ở CÙNG băm script nhưng có thêm phần uỷ quyền trỏ vào một khoá lạ.
+///
+/// `Address` có hai phần, và hai địa chỉ cùng phần thanh toán mà khác phần uỷ quyền là
+/// HAI ĐỊA CHỈ trên chuỗi — cả hai đều chạy đúng validator đó, nên mọi phép so chỉ chạm
+/// `payment_credential` không phân biệt nổi chúng. Đây là hình dạng của cuộc tấn công
+/// "dời nhà": ô kho vẫn nằm trong script, nhưng `utxosAt(<địa chỉ kho>)` không còn thấy
+/// nó, và phần thưởng uỷ quyền trên số ADA giữ chỗ chảy về khoá của kẻ dựng giao dịch.
+pub fn rehomed_script_output(
+  hash: ByteArray,
+  stake_key: ByteArray,
+  value: Value,
+  datum: Datum,
+) -> Output {
+  Output {
+    address: from_script(hash) |> with_delegation_key(stake_key),
+    value,
+    datum,
+    reference_script: None,
+  }
 }
 
 pub fn ref_at(index: Int) -> OutputReference {

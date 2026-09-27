@@ -140,6 +140,16 @@ Note for anyone following older documentation: `OriLife-Specs/Fee/FeeMechanism-T
    halves belong here, because the loss decides nothing and the recoverable balance decides whether
    anyone still has to go back for it. The current revision has `Close`, and `closeTx` is in the
    same file.
+
+   **Since 2026-09-27 the source in this repository no longer matches those addresses.** A patch
+   round pinned continuing outputs to the FULL `Address` rather than to the payment credential
+   alone and forbade a reference script on the vault (`fee_vault.ak` header, item 5;
+   `donation_escrow.ak` header, second hole), which changes both script hashes. The deployed ones
+   are `fee_vault` `457a22dc…79cabcb6` and `donation_escrow` `7ad64886…9df2f0be`; the current ones
+   are the `hash` fields in `onchain/orilife_treasury/plutus.json`, rebuilt by `aiken build`. The
+   recorded addresses stay as written: they are what is on Preprod, and the patched revision has
+   never been deployed, so it has no address to record. Read the file as a log of what ran, not as
+   a pointer to what the code now builds.
 5. This file said, until 2026-09-14, that the CARP validator lived on an unmerged branch named
    `claude/hop-dong-phi-carp-preprod`. That was true when written, false two commits later, and by
    2026-09-21 the branch had been deleted outright. The paragraph outlived the thing it named twice

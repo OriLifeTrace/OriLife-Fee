@@ -118,7 +118,55 @@ export function custodyAddress(v: Validator): string {
 const ENV_HINT = "Set it as an environment variable, or add it to this repository's .env "
   + "(see .env.example).";
 
+/**
+ * The networks these scripts are allowed to touch. A CLOSED set, on purpose: everything that is
+ * not named here is refused, including a value nobody anticipated.
+ *
+ * `Custom` is deliberately absent even though it is a valid Lucid network. The emulator path
+ * (e2e/harness.ts) declares its own NETWORK and builds its own Lucid; it never reaches this
+ * module. And BLOCKFROST_URL below is assembled as `cardano-${NETWORK.toLowerCase()}`, so
+ * `Custom` would address a host that does not exist.
+ */
+export const ALLOWED_NETWORKS = ["Preview", "Preprod"] as const;
+
+/**
+ * Refuse any network outside the testnet set.
+ *
+ * This is not redundant with assertRecordedNetwork(). That one compares a RECORD against a
+ * configuration, so it is silent whenever there is no record to compare — a fresh deploy, or the
+ * very first run in a new checkout. This one asks a different question, and asks it of the
+ * configuration alone: is this a network these scripts may spend on at all.
+ *
+ * What made the gap worth closing: NETWORK is read straight from the environment with a default,
+ * `export const NETWORK: Network = (process.env.NETWORK ?? "Preview") as Network`. The cast makes
+ * any string a Network as far as the compiler is concerned, and `NETWORK=Mainnet` then produces a
+ * working Blockfrost URL, a working address derivation, and a wallet holding real funds. Nothing
+ * in the earlier assertEnv() looked at it — it only asked whether three variables were non-empty.
+ *
+ * Fail-closed and loud: the message names the variable and the rejected value, because a guard
+ * that says only "wrong network" sends the reader to look for the wrong thing. NETWORK is not a
+ * secret; BLOCKFROST_KEY and WALLET_SEED are, and no branch here prints either — the checks below
+ * report absence by name and never echo a value.
+ *
+ * Kept as a free function taking the value so a test can pin it without an environment.
+ */
+export function assertTestnetNetwork(network: string): void {
+  if ((ALLOWED_NETWORKS as readonly string[]).includes(network)) return;
+  throw new Error(
+    "refusing to run: NETWORK is not one of the testnets these scripts are for.\n"
+    + `  NETWORK  : ${JSON.stringify(network)}\n`
+    + `  allowed  : ${ALLOWED_NETWORKS.join(", ")}\n`
+    + "These scripts deploy contracts and spend from a seed-phrase wallet. On Mainnet that spends "
+    + "real funds, and no later check would catch it: Blockfrost accepts the URL, the address "
+    + "derivation succeeds, and the transaction confirms. If mainnet is genuinely the intent, that "
+    + "is a decision for a separate deployment path, not an environment variable.");
+}
+
 export function assertEnv(): void {
+  // The network gate runs FIRST. The three checks below can pass on any network, so reporting a
+  // missing variable before refusing the network would send the reader off to fill in a secret
+  // for a run that must not happen at all.
+  assertTestnetNetwork(NETWORK);
   if (!BLOCKFROST_KEY) throw new Error(`Missing BLOCKFROST_KEY. ${ENV_HINT}`);
   if (!WALLET_SEED)    throw new Error(`Missing WALLET_SEED. ${ENV_HINT}`);
   if (!LAMP_POLICY_ID) throw new Error(`Missing LAMP_POLICY_ID. ${ENV_HINT}`);

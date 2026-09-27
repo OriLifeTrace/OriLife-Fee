@@ -25,7 +25,9 @@ import {
 } from "./common.mjs";
 import { EscrowDatum } from "./schemas.mjs";
 
-/// Khai rộng tay. Bài kiểm cục bộ đo lượt tốn nhất khoảng 75 M bước, 300 K bộ nhớ.
+/// Khai rộng tay. Đo lại 2026-09-27 bằng `aiken check` (trường `execution_units` của từng
+/// bài): bài tốn nhất của cả hai validator dưới 120 M bước / 350 K bộ nhớ. Số đúng tại thời
+/// điểm chạy nằm ở output của lệnh đó, không chép lại đây; mức khai dưới đây dư ~7 lần.
 const EX_MEM = 2_000_000n;
 const EX_STEPS = 900_000_000n;
 
