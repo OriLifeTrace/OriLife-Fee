@@ -1,69 +1,99 @@
 # @orilife/fee
 
-Task-fee pricing for OriLife users, plus the bridge that deposits the resulting LAMP into the
-treasury buckets (reusing the LAMP Treasury Collect layer — no new on-chain code).
+**OriLife services are priced in MAGIC. Cardano network fees are paid in ADA.** This repository is
+the OriLife side of that pricing: it reads the `op_declaration` that OriLife-Core attaches to every
+billable response, quotes it against MAGIC's price beacon, and plans the `ConsumeMAGIC`
+transactions the user has to sign. Building and signing those transactions is not done here: that
+is MAGIC's SDK (`@magiclamp/consumemagic`, `buildConsumeTx`), and the user signs from their own
+MAGIC vault. OriLife's server cannot sign it.
 
-## In one line
+The repository also holds `onchain/`, an earlier prototype of fee settlement that pays a fixed
+share of fee inflow to the Cardano treasury (see below).
 
-A user performs a task (register a tree, run an identity scan, anchor on-chain) → `quoteFee`
-prices it in LAMP and splits it across three buckets (PROTOCOL / LAMPNET_REWARD / ANCHOR) →
-`buildFeeCollectTx` builds ONE Collect transaction that deposits the whole fee into the treasury.
-The `custody.custody.spend` Plutus validator enforces `Σout = Σin` (LAMP is fixed-supply; nothing
-is ever burned).
+## How a task is charged
 
-## Two layers, and only one of them runs from a fresh clone
+1. **OriLife-Core declares quantities, not prices.** Each billable API response carries
+   `op_declaration`: the measured quantity of each MAGIC operation type the task used (images
+   processed, CIDs anchored, …). It carries no MAGIC amount. Source:
+   `MasterIdentify/core/magic_ops.py` in `OriLife-Core`; shape and rules in
+   `MOBILE-API-CONTRACT.md` §14.6-bis.
+2. **This package turns the declaration into a plan** (`planConsume`, `planConsumeFromResponse`).
+   There are five outcomes and they are kept apart:
+   - `charge` — `ops` has one line: one `ConsumeMAGIC` transaction (the on-chain `Consume`
+     redeemer carries a single op type and count);
+   - `multi_line_held` — `ops` has more than one line. One task is one transaction, and a
+     transaction carrying several pairs needs a new `ConsumeMAGIC` validator, so the task is not
+     charged yet and is never split into one transaction per line. The quote carries no amount.
+     With the default Core configuration `ops` has at most one line;
+   - `no_charge` — `ops: []`, nothing to consume for this run;
+   - `not_declared` — the field is absent: nothing to consume, and the UI must **not** show it as
+     free;
+   - `replay` — an idempotent replay (`idempotent_replay: true`). The first response may have been
+     lost before the consume was made, so the plan and quote keep the lines and amounts; the app
+     consumes only if its own record shows no consume for that `client_event_id`. A replay of a
+     run with `ops: []` is `no_charge`.
 
-Stated up front so nobody wastes time: **the bridge layer needs the LAMP repository, which is not
-public today.** The core layer needs nothing at all.
+   Code 3 (`storage_event`) in `ops` is refused: Core counts one storage event, not bytes, and
+   always lists it under `pending`.
+3. **The price comes from the PriceParam beacon** (`quoteConsume`, `requiredNanogic`):
+   `required = ⌊ base_price × demand_mult × op_count / Q ⌋` nanogic, multiplied first and floored
+   once — the same formula as MAGIC's `requiredFromBeacon` and the on-chain `required_for`. The
+   beacon datum is passed in by the caller; this package contains no price. `assertPriceFresh`
+   applies the same staleness rule as the `ConsumeMAGIC` validator.
+4. **MAGIC's SDK builds the transaction and the user signs it.** The Cardano network fee for that
+   transaction is ADA.
 
-| | Needs LAMP? | Contains |
-|---|---|---|
-| **Core** | no | `feeEngine` (pricing) · `bridge` (invariants) · `buckets` · `tasks` |
-| **Bridge** | yes | `treasuryClient` · `e2e/` · `scripts/*_preview.ts` |
+Some OriLife-Core versions also return an older `fee_quote` field (§14.6), denominated in LAMP and
+ADA. This package does not read it.
 
-### Running the core layer — clone and go
+## Using it
+
+The package is not built or published yet (`"private": true`, no `exports`); import the source,
+`src/index.ts`.
+
+```ts
+import { assertPriceFresh, planConsumeFromResponse, priceEpochAt, quoteConsume } from "./src/index.js";
+
+const plan = planConsumeFromResponse(responseBody); // throws if op_declaration is malformed
+// The validator's epoch is POSIX ms / ms_per_epoch, not the Cardano epoch number.
+assertPriceFresh(priceParam, priceEpochAt(tipPosixMs, msPerEpoch), maxPriceStale);
+const quote = quoteConsume(plan, priceParam);
+// kind: charge | multi_line_held | no_charge | not_declared | replay
+```
+
+For `POST /api/identify/auto` the declaration is at `result.op_declaration`; pass `body.result`.
+
+| Module | Contains |
+|---|---|
+| `src/opDeclaration.ts` | `parseOpDeclaration` — validates the §14.6-bis shape, throws on anything else |
+| `src/magicPrice.ts` | `PriceParam`/`OpPrice` types, `requiredNanogic`, `priceEpochAt`, `assertPriceFresh`, `NANOGIC_PER_MAGIC`, `Q` |
+| `src/consumePlan.ts` | `planConsume`, `planConsumeFromResponse`, `quoteConsume` |
+
+Pure code: no I/O, no network, no dependency on another repository.
 
 ```bash
 npm install
 npx tsc --noEmit -p tsconfig.core.json
-npx vitest run tests/feeEngine.test.ts tests/bridge.test.ts tests/custodyAddress.test.ts
+npx vitest run
 ```
 
-That is also exactly what the CI gate runs (`.github/workflows/ci.yml`, job `core`). The gate
-spells out what it does **not** cover, rather than letting one green check imply coverage it
-never had.
+This is what the CI gate runs (`.github/workflows/ci.yml`, job `core`).
 
-### Running both layers — needs the LAMP repository on disk
+## Fee vault + donation escrow (`onchain/`, tCARP, Preprod)
 
-```bash
-bash scripts/pin-lamp.sh    # materialises vendor/lamp, pinned to commit ebafc2e1
-npm test                    # 57 tests
-npm run typecheck
-npm run e2e:emulator        # prints the evidence: 1 Collect tx, 8 invariants, a real txHash
-```
+This is a prototype of one specific guarantee: a fixed share of fee inflow must be paid to the
+Cardano treasury, and the contract, not an operating procedure, enforces it. It uses
+`treasury_donation`, a Conway-era transaction body field. Its unit is `tCARP`, a single-signature
+test token, because CARP has not been issued. The design, the invariants, and the transactions
+already run on Preprod are in [`onchain/README.md`](onchain/README.md). CI checks it with
+`aiken check` (job `onchain`).
 
-`scripts/pin-lamp.sh` **pins** LAMP to exactly one commit rather than following HEAD. The reason
-is at the top of that file and is worth reading before touching anything: commit `ebafc2e1` is the
-last commit that still matches `vendor/treasury-custody.plutus.json`, i.e. matches the custody
-instance already deployed on Preview. That address holds real assets. Rebuilding the blueprint
-against a newer LAMP changes the script hash, which changes the address, which means losing the
-ability to spend what is sitting there.
+## The earlier LAMP prototype
 
-`vendor/lamp/` is in `.gitignore`: this repository pins another repository's commit, it does not
-copy that repository's code into itself.
+Until 2026-10-02 this repository also held a LAMP-denominated quote engine and a bridge into a
+LAMP Treasury custody contract on Preview. That code has been removed. The custody address it
+deployed still holds assets; where they are and how to reach the code that spends them is in
+[`docs/lamp-prototype.md`](docs/lamp-prototype.md). `OriLife-Specs/Fee/` (`FeeMechanism-*.md`)
+still describes that prototype, not MAGIC pricing.
 
-## Documentation
-
-`OriLife-Specs/Fee/`: `FeeMechanism-CONTRACT.md` (the backbone) · `-FEAT.md` · `-MATH.md` ·
-`-TECH.md` · `-EXEC.md`. Build report and review notes: `AUDIT.md`.
-
-## Architecture (short version)
-
-```
-quoteFee (feeEngine) ──FeeQuote──▶ quoteToCollectItems (bridge) ──CollectItem[]──▶
-  buildFeeCollectTx (treasuryClient) ──▶ buildCollectTx (@magiclamp/treasury-sdk) ──▶
-  custody.ak Collect validator ──▶ custody UTxO: value += feeOil, 3-bucket ledger += oil
-```
-
-`src/params|buckets|tasks|feeEngine|bridge` is pure off-chain code (its tests do not need the
-LAMP repository). Only `treasuryClient` and `e2e/` touch the Treasury SDK.
+Current state of each part: `STATUS.md`. Review history: `AUDIT.md`.
