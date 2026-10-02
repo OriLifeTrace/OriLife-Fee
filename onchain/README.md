@@ -36,8 +36,9 @@ còn ép ô sổ mở ra ở đúng địa chỉ kho, sổ `0/0`, không CARP, k
 phải đốt NFT. Không có NFT thì một UTxO bất kỳ mang datum tự đặt ở địa chỉ kho trông y hệt sổ.
 
 Mọi UTxO khác ở địa chỉ kho là **ô lạc** (gửi nhầm, có hay không có datum). Ô lạc chỉ được
-tiêu cùng ô sổ trong một `Collect`, và sổ phải tăng ít nhất bằng số CARP của ô lạc. `Skim`,
-`Operate`, `Close` từ chối giao dịch có ô lạc. Hệ quả cần biết: phần **không phải CARP** của ô
+tiêu cùng ô sổ trong một `Collect`, và sổ phải tăng ít nhất bằng số CARP của ô lạc. `Skim` và
+`Close` từ chối giao dịch có ô lạc; `Operate` nhận ô lạc chỉ-ADA (CARP ở ô sổ không đổi), không
+nhận ô lạc có CARP. Hệ quả cần biết: phần **không phải CARP** của ô
 lạc (ADA, token lạ, reference script) ai gom thì người đó lấy — nên đừng bao giờ đặt reference
 script ở địa chỉ kho hay hộp thư.
 
@@ -74,7 +75,10 @@ hộp thư — không đầu vào script, không chữ ký OriLife. Gom vào s�
 Kiểm theo mẫu *withdraw-zero*: mặt `spend` của mỗi ô hộp thư chỉ kiểm giao dịch có rút từ
 stake credential của chính hộp thư; mặt `withdraw` chạy MỘT lần cho cả lô và kiểm: đúng một
 đầu vào và một đầu ra giữ NFT sổ, sổ tăng ít nhất bằng tổng CARP của mọi ô hộp thư và mọi ô
-lạc ở địa chỉ kho trong giao dịch. Nhờ vậy chi phí tăng tuyến tính theo số ô, không bậc hai.
+lạc ở địa chỉ kho trong giao dịch. Phép kiểm sổ chỉ chạy một lần, nhưng mặt `spend` của mỗi ô
+vẫn dò danh sách đầu vào để tìm lần rút, nên tổng chi phí tăng nhanh hơn tuyến tính theo số ô
+(bảng đo ở mục "Chi phí thực thi đo trên Emulator": khoảng 3,9 K mem thêm cho mỗi vị trí). Trần
+30 ô hộp thư mỗi lượt của `03` đặt theo bảng đó.
 Mặt `publish` chỉ cho **đăng ký** credential (làm một lần lúc mở kho); huỷ đăng ký hay uỷ quyền
 đều bị từ chối.
 
@@ -232,10 +236,11 @@ kho tạm  addr_test1wprtlz6pvvpslhwdtkdj629zsed53ajwc0qphzfkgpnzc7ssd72q3
 | đóng kho | `e2cf1e27` | 5080021 | 5 tADA + 900 tCARP về ví; kho phí và kho tạm đều còn 0 UTxO |
 
 **Giá thật của một lượt nộp, đo chứ không ước:** nộp 1,0 tADA vào kho bạc tốn 1,913199 tADA
-phí. Chi phí thực thi khai RỘNG TAY trong `scripts/05` (2 M bộ nhớ, 900 M bước) và nút mạng
-tính phí theo mức KHAI chứ không theo mức dùng thật — nên phí đó phần lớn là tiền khai thừa,
-không phải chi phí thật của hợp đồng. Siết lại con số khai là việc còn để ngỏ; ghi ra đây để
-không ai đọc "1,9 ADA phí" thành "hợp đồng nặng".
+phí. Trong đó 1,5 tADA là khoản bù tay (`FEE_SLACK`) mà `scripts/05` lúc ấy cộng thêm vì tưởng
+bộ dựng tính phí khi chi phí thực thi còn bằng 0. Đo lại trên Emulator thì phí của bộ dựng ĐÃ gồm
+giá ExUnits đã khai (2 M bộ nhớ, 900 M bước), nên khoản bù đó là thừa và đã bỏ khỏi `05`. Phần
+còn lại (khoảng 0,41 tADA) mới là phí thật, trong đó phần ExUnits vẫn tính theo mức KHAI rộng
+tay chứ không theo mức dùng thật. Ghi ra đây để không ai đọc "1,9 ADA phí" thành "hợp đồng nặng".
 
 Instance CŨ (`addr_test1wrxmzy4qjv2a8urrk6fy36ek6336qu82h685wzad6deqauctrwv0c`, ghi trong
 `deployed_preprod.json` mục `previous`) còn **5.000.000 lovelace + 900.000 tCARP**. tCARP thì
@@ -254,7 +259,7 @@ giao dịch của Preprod là 14 M bộ nhớ / 10 G bước.
 | mở kho | đăng ký credential hộp thư | 17 049 | 4 605 712 |
 | gom 29 ô hộp thư + 2 ô lạc | ô sổ `Collect` | 1 515 301 | 510 739 404 |
 | gom 29 ô hộp thư + 2 ô lạc | `withdraw` hộp thư (cả lô) | 1 143 722 | 378 332 339 |
-| gom 29 ô hộp thư + 2 ô lạc | **cả giao dịch** (32 redeemer) | **6 701 822** | **2 978 733 099** |
+| gom 29 ô hộp thư + 2 ô lạc | **cả giao dịch** (33 redeemer: 32 spend + 1 withdraw) | **6 701 822** | **2 978 733 099** |
 | trích 10% | ô sổ `Skim` | 401 682 | 138 172 594 |
 | đổi + nộp | ô kho tạm `Donate` | 165 242 | 59 792 207 |
 | đóng kho | ô sổ `Close` + đốt NFT | 177 176 + 33 426 | 56 851 057 + 10 239 686 |
@@ -284,8 +289,10 @@ Bộ chạy đã được kiểm ngược bằng đột biến, mỗi đột bi�
   thu lại phần chênh khi giá thị trường nằm GIỮA sàn và giá mở.
 - **Gom có trần mỗi lượt, và chỉ nhặt ô gom được.** Hộp thư và địa chỉ kho là địa chỉ ai cũng gửi
   vào được, nên `03` không nhặt mù: chỉ ô CÓ CARP, không mang băm datum chưa giải được, không mang
-  reference script; xếp CARP giảm dần; tối đa 30 ô hộp thư và 4 ô lạc. Ô chỉ-ADA và ô mang datum
-  độc nằm lại vĩnh viễn ở địa chỉ kho — không hại gì, và `06` không để chúng chặn việc đóng kho.
+  reference script; xếp CARP giảm dần; tối đa 30 ô hộp thư và 4 ô lạc. `03` bỏ qua ô chỉ-ADA và
+  ô mang datum độc. Ô chỉ-ADA vẫn gom được nếu dựng tay kèm một `Collect` có `amount > 0`; ô mang
+  băm datum không có tiền ảnh thì không ai tiêu được. Không hại gì, và `06` không để chúng chặn
+  việc đóng kho.
 - **Nguồn tự động của `collected` mới có một nửa.** Hộp thư nhận phí từ bất kỳ giao dịch nào
   trả CARP vào địa chỉ của nó, và ai cũng gom được. Phía ConsumeMAGIC chưa trả phí nền tảng
   vào địa chỉ hộp thư; tới lúc đó `03` vẫn tự nộp thay để thử tuyến.

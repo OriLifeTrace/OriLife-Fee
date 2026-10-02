@@ -42,7 +42,9 @@ const scripts = buildScripts({
 
 // Ai cũng `Skim` được, nên địa chỉ kho tạm có thể giữ nhiều lô cùng lúc. Đòi "đúng 1 ô" thì
 // một lần trích 1 đơn vị của người ngoài là dừng cả tuyến. Chọn lô của ĐÚNG instance kho phí
-// này, mở phiên SỚM NHẤT — giá nó đã xuống thấp nhất; ô không đọc được datum thì bỏ qua.
+// này, NHIỀU CARP nhất, hoà thì mở phiên sớm nhất; ô không đọc được datum thì bỏ qua. Không xếp
+// theo `listed_at` trước: ai cũng gửi được một lô giả mang băm kho thật với `listed_at = 0` và
+// 1 đơn vị CARP, và lô đó sẽ luôn đứng đầu, mỗi lượt `05` tốn trọn phí cho 1 đơn vị.
 const atEscrow = await lucid.utxosAt(scripts.escrowAddress);
 const lots = atEscrow.flatMap((u) => {
   try {
@@ -54,9 +56,10 @@ const lots = atEscrow.flatMap((u) => {
   }
 });
 if (lots.length === 0) throw new Error("kho tạm không có lô nào của instance kho phí này");
-lots.sort((a, b) => (a.d.listed_at < b.d.listed_at ? -1 : a.d.listed_at > b.d.listed_at ? 1 : 0));
+const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+lots.sort((a, b) => cmp(b.d.carp, a.d.carp) || cmp(a.d.listed_at, b.d.listed_at));
 const { u: escrow, d: escrowDatum } = lots[0];
-console.log("số lô       ", lots.length, "— chọn lô mở phiên sớm nhất;",
+console.log("số lô       ", lots.length, "— chọn lô nhiều CARP nhất;",
   atEscrow.length - lots.length, "ô khác ở địa chỉ kho tạm bị bỏ qua");
 const held = escrow.assets[scripts.carpUnit] ?? 0n;
 if (escrowDatum.carp !== held) throw new Error(`sổ kho tạm khai ${escrowDatum.carp} nhưng giữ ${held}`);
@@ -139,10 +142,10 @@ txb.add_output(
 // Ô GIỮ CHỖ cho khoản nộp kho bạc: dựng như một đầu ra bình thường để bộ dựng cân đối
 // đủ tiền, rồi ngay sau đây gỡ nó ra và chuyển đúng ngần ấy sang trường nộp kho bạc.
 // Cân bằng vẫn đúng từng lovelace: `vào = ra + phí + nộp`.
-// Ô giữ chỗ gánh HAI khoản: phần nộp kho bạc, và phần phí thêm cho việc chạy hợp đồng
-// (bộ dựng tính phí khi chi phí thực thi còn bằng 0, nên phải bù tay sau).
-const FEE_SLACK = 1_500_000n;
-const placeholderLovelace = requiredLovelace + FEE_SLACK;
+// Phí bộ dựng tính ra ĐÃ gồm chi phí thực thi khai ở trên (đo trên Emulator: phí 432 471 =
+// 44 × kích thước + 155 381 + giá ExUnits). Gỡ ô giữ chỗ chỉ làm thân giao dịch nhỏ đi, nên phí
+// cũ vẫn đủ; không bù thêm.
+const placeholderLovelace = requiredLovelace;
 txb.add_output(
   CML.TransactionOutputBuilder.new()
     .with_address(buyer)
@@ -170,7 +173,7 @@ for (let i = 0; i < oldOuts.len(); i++) {
 }
 if (!removed) throw new Error("không tìm thấy ô giữ chỗ để gỡ — dừng, đừng đoán");
 
-const body = CML.TransactionBody.new(oldBody.inputs(), keptOuts, oldBody.fee() + FEE_SLACK);
+const body = CML.TransactionBody.new(oldBody.inputs(), keptOuts, oldBody.fee());
 const carry = [
   ["set_ttl", "ttl"], ["set_validity_interval_start", "validity_interval_start"],
   ["set_network_id", "network_id"], ["set_script_data_hash", "script_data_hash"],
