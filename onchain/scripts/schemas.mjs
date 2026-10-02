@@ -26,11 +26,19 @@ export const OutputReference = Data.Object({
 ///
 /// `Data.Nullable` sinh đúng `Constr 0 [v]` / `Constr 1 []`, khớp `Option` của Aiken
 /// (đã đối chiếu: `null` ra `d87a80`).
+///   `listed_at` — mốc POSIX ms bắt đầu phiên đấu giá giảm dần của khoản trích. `Skim` phải
+///              đặt nó ĐÚNG bằng cận trên khoảng hiệu lực của giao dịch trích; phần dư sau
+///              một lần `Donate` giữ nguyên giá trị này (`donation_escrow.ak`).
 export const EscrowDatum = Data.Object({
   carp: Data.Integer(),
   vault: Data.Bytes(),
   parent: Data.Nullable(OutputReference),
+  listed_at: Data.Integer(),
 });
+
+/// Mặt đúc của kho phí: Open (đúc NFT sổ, tiêu `seed`) · Burn (đốt NFT khi `Close`).
+/// Thứ tự khớp `types.ak` ▸ `VaultMint`.
+export const VaultMint = Data.Enum([Data.Literal("Open"), Data.Literal("Burn")]);
 
 /// Redeemer của kho phí: Collect{amount} · Skim{amount} · Operate · Close
 ///

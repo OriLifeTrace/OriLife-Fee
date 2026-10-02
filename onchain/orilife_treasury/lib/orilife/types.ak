@@ -4,7 +4,15 @@
 //// Không có số thực nào trong hợp đồng: mọi phép chia đều là chia nguyên, và chỗ nào
 //// làm tròn thì làm tròn LÊN về phía nghĩa vụ, không về phía người giữ tiền.
 
+use cardano/assets.{AssetName}
 use cardano/transaction.{OutputReference}
+
+/// Tên NFT định danh ô sổ kho phí. Policy của nó là băm chính script kho phí, và chỉ đúc
+/// được một lần (`seed` bị tiêu khi mở kho), nên "ô ở địa chỉ kho giữ NFT này" là cách
+/// DUY NHẤT nhận ra sổ thật. Địa chỉ thì không nhận ra được: ai cũng gửi được một UTxO
+/// mang datum tự đặt tới địa chỉ kho. Kho phí, `fee_inbox` và kịch bản ngoài chuỗi dùng
+/// chung đúng chuỗi byte này (hex `6f72696c6966652d6665652d7661756c74`).
+pub const vault_nft_name: AssetName = "orilife-fee-vault"
 
 /// Trạng thái kho phí. Hai con số này là toàn bộ lời khai của kho, và ai cũng đọc được
 /// chúng trực tiếp từ UTxO — không phải hỏi máy chủ nào.
@@ -36,6 +44,15 @@ pub type VaultRedeemer {
   Close
 }
 
+/// Mặt đúc của kho phí. Chỉ có hai việc: đúc NFT sổ khi mở kho, đốt nó khi đóng kho.
+pub type VaultMint {
+  /// Mở kho: tiêu `seed`, đúc đúng một NFT vào một ô sổ trắng.
+  Open
+  /// Đốt NFT. Đường duy nhất tới đây là `Close` — mọi nhánh spend khác đòi ô sổ đi ra
+  /// giữ NFT.
+  Burn
+}
+
 /// Kho tạm giữ phần đã trích. Tiền ở đây chỉ có một lối ra: một giao dịch có nộp
 /// kho bạc Cardano.
 pub type EscrowDatum {
@@ -59,6 +76,14 @@ pub type EscrowDatum {
   /// `Donate` vào một giao dịch là `trả_lại` phình lên và nghĩa vụ bốc hơi. Có trường
   /// này thì phần dư tự khai mình là phần dư của ô nào.
   parent: Option<OutputReference>,
+  /// Mốc POSIX (ms) phiên đấu giá giảm dần của khoản này bắt đầu: tới mốc này giá còn ở
+  /// trần, sau đó hạ tuyến tính về sàn trong `decay_ms`.
+  ///
+  /// Vì sao cần: trả đúng sàn ở mọi thời điểm là trao cho người gọi `Donate` một quyền
+  /// chọn miễn phí — họ lấy CARP theo sàn và bỏ túi chênh lệch tới giá thị trường. Kho
+  /// phí ép mốc này bằng cận trên khoảng hiệu lực của giao dịch `Skim` (không lùi ngày
+  /// được để mua rẻ ngay), và phần dư giữ nguyên mốc của ô gốc (không đặt lại được).
+  listed_at: Int,
 }
 
 pub type EscrowRedeemer {

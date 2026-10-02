@@ -11,20 +11,31 @@
 
 import { Data } from "@lucid-evolution/lucid";
 import {
-  connect, state, saveState, buildScripts, explorer, awaitTx, SKIM_BPS,
+  connect, state, saveState, buildScripts, splitVaultUtxos, sweepable, explorer, awaitTx, SKIM_BPS,
 } from "./common.mjs";
-import { VaultDatum, VaultRedeemer } from "./schemas.mjs";
+import { VaultDatum, VaultRedeemer, VaultMint } from "./schemas.mjs";
 
 const s = state();
 const lucid = await connect();
 const walletAddress = await lucid.wallet().address();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, operatorKeyHash: s.operatorKeyHash,
+  carpPolicy: s.carpPolicy, carpName: s.carpName, operatorKeyHash: s.operatorKeyHash, seed: s.seed,
 });
 
-const utxos = await lucid.utxosAt(scripts.vaultAddress);
-if (utxos.length !== 1) throw new Error(`kho phải có đúng 1 UTxO, đang thấy ${utxos.length}`);
-const vault = utxos[0];
+// Ô lạc có CARP ở địa chỉ kho, và ô hộp thư có CARP, chỉ vào sổ được qua `Collect` của một sổ
+// CÒN SỐNG (`fee_inbox` ▸ `withdraw` đòi đầu vào giữ NFT sổ). Đóng kho khi chúng còn là bỏ lại
+// CARP đó vĩnh viễn. Ô không gom được (chỉ-ADA, datum không giải được, có script) thì không
+// chặn: ai cũng gửi được vào hai địa chỉ này, và chặn theo chúng là trao cho người ngoài
+// quyền không cho kho đóng.
+const { ledger: vault, strays } = splitVaultUtxos(
+  await lucid.utxosAt(scripts.vaultAddress), scripts.vaultNftUnit,
+);
+const left =
+  sweepable(strays, scripts.carpUnit, Infinity).picked.length +
+  sweepable(await lucid.utxosAt(scripts.inboxAddress), scripts.carpUnit, Infinity).picked.length;
+if (left > 0) {
+  throw new Error(`còn ${left} ô CARP ở địa chỉ kho hoặc hộp thư — gom bằng 03_collect_fee.mjs trước khi đóng`);
+}
 const ledger = Data.from(vault.datum, VaultDatum);
 
 // Tính lại đúng công thức hợp đồng dùng, để dừng ở đây thay vì dừng ở nút mạng.
@@ -44,6 +55,9 @@ console.log("thu về   ", vault.assets.lovelace, "lovelace +", held, "đơn v�
 const tx = await lucid
   .newTx()
   .collectFrom([vault], Data.to("Close", VaultRedeemer))
+  // NFT sổ phải bị đốt trong chính giao dịch đóng kho (`Close` đòi thế): sổ đã đóng thì
+  // không còn token nào tự xưng là sổ. Hai mặt chung một script nên chỉ đính một lần.
+  .mintAssets({ [scripts.vaultNftUnit]: -1n }, Data.to("Burn", VaultMint))
   .attach.SpendingValidator(scripts.vaultScript)
   // Chữ ký vận hành. Ví đang dùng chính là khoá vận hành (`operatorKeyHash` suy từ nó),
   // nhưng phải khai tường minh: bộ dựng không tự thêm khoá vào `extra_signatories`.
