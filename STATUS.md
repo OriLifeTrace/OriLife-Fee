@@ -70,6 +70,15 @@ the whole suite run again; every one turned it red:
    still spends those. The current revision has `Close`.
 3. `onchain/scripts/*.mjs` import `@lucid-evolution/lucid` from this repository's root
    `package.json`; that is the only reason the dependency is still there.
+4. **The source in this repository no longer matches the Preprod addresses above.** Outputs that
+   continue the vault or the escrow are pinned to the FULL `Address`, not to the payment credential
+   alone, and a reference script on the vault is refused (`fee_vault.ak` header, item 5;
+   `donation_escrow.ak` header, second hole). Both script hashes change. The deployed ones are
+   `fee_vault` `457a22dc…79cabcb6` and `donation_escrow` `7ad64886…9df2f0be`; the current ones are
+   the `hash` fields in `onchain/orilife_treasury/plutus.json`, rebuilt by `aiken build`. The
+   recorded addresses stay as written: they are what is on Preprod, and the patched revision has
+   never been deployed, so it has no address to record. Read `deployed_preprod.json` as a log of
+   what ran, not as a pointer to what the code now builds.
 
 ## History
 

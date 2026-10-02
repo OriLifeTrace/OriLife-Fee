@@ -109,12 +109,24 @@ nên chạy lại không đúc thêm hay mở thêm kho.
 
 ## Đã chạy thật trên Preprod — 2026-08-21
 
-Cả vòng đời, bằng validator sau khi vá. Instance mới:
+Cả vòng đời, bằng bản validator của ĐỢT VÁ 2026-08-21. Instance khi đó:
 
 ```
 kho phí  addr_test1wqt7d59afdfzue5mhhjkzeyxjrts64gp6zphcguf7q25ftg43gmjr
 kho tạm  addr_test1wprtlz6pvvpslhwdtkdj629zsed53ajwc0qphzfkgpnzc7ssd72q3
 ```
+
+> **Hai địa chỉ trên là BẢN GHI LỊCH SỬ, không phải địa chỉ của mã trong kho hôm nay.**
+> Đợt vá 2026-09-27 (ghim địa chỉ ĐẦY ĐỦ thay cho băm script, và cấm reference script trên
+> ô kho — mục 5 ở đầu `fee_vault.ak`) đổi cả hai băm script chưa-áp-tham-số. Băm đã deploy
+> là `fee_vault` `457a22dc…79cabcb6` và `donation_escrow` `7ad64886…9df2f0be`; băm của mã
+> hôm nay đọc ở trường `hash` trong `orilife_treasury/plutus.json` (sinh bằng `aiken build`),
+> không chép lại đây.
+>
+> Băm đổi ⟹ địa chỉ đổi, nên bản hiện tại CHƯA từng được deploy và chưa có địa chỉ nào để
+> ghi. Giữ nguyên địa chỉ cũ ở đây là cố ý: sửa chúng thành địa chỉ suy từ mã hôm nay là
+> trỏ người đọc tới một chỗ trên chuỗi không có gì, và xoá mất con đường về số dư mà
+> instance cũ còn giữ (xem mục `previous` trong `scripts/deployed_preprod.json`).
 
 | Bước | Giao dịch | Khối | Ghi chú |
 |---|---|---|---|
