@@ -17,11 +17,13 @@
 // là cố ý: buộc một sàn cụ thể vào mã là buộc luôn cả rủi ro của sàn đó.
 
 import * as CML from "@anastasia-labs/cardano-multiplatform-lib-nodejs";
-import { utxoToCore, assetsToValue, createCostModels } from "@lucid-evolution/utils";
+import {
+  utxoToCore, assetsToValue, createCostModels, unixTimeToSlot, slotToUnixTime,
+} from "@lucid-evolution/utils";
 import { Data } from "@lucid-evolution/lucid";
 import {
-  connect, state, saveState, buildScripts, explorer, awaitTx,
-  MIN_LOVELACE_PER_CARP, CARP_SCALE,
+  connect, state, saveState, buildScripts, explorer, awaitTx, requiredDonation,
+  NETWORK, CARP_SCALE,
 } from "./common.mjs";
 import { EscrowDatum } from "./schemas.mjs";
 
@@ -35,23 +37,47 @@ const s = state();
 const lucid = await connect();
 const walletAddress = await lucid.wallet().address();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, operatorKeyHash: s.operatorKeyHash,
+  carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed,
 });
 
-const escrowUtxos = await lucid.utxosAt(scripts.escrowAddress);
-if (escrowUtxos.length !== 1) throw new Error(`kho tạm phải có đúng 1 UTxO, đang thấy ${escrowUtxos.length}`);
-const escrow = escrowUtxos[0];
+// Ai cũng `Skim` được, nên địa chỉ kho tạm có thể giữ nhiều lô cùng lúc. Đòi "đúng 1 ô" thì
+// một lần trích 1 đơn vị của người ngoài là dừng cả tuyến. Chọn lô của ĐÚNG instance kho phí
+// này, NHIỀU CARP nhất, hoà thì mở phiên sớm nhất; ô không đọc được datum thì bỏ qua. Không xếp
+// theo `listed_at` trước: ai cũng gửi được một lô giả mang băm kho thật với `listed_at = 0` và
+// 1 đơn vị CARP, và lô đó sẽ luôn đứng đầu, mỗi lượt `05` tốn trọn phí cho 1 đơn vị.
+const atEscrow = await lucid.utxosAt(scripts.escrowAddress);
+const lots = atEscrow.flatMap((u) => {
+  try {
+    const d = Data.from(u.datum, EscrowDatum);
+    const held = u.assets[scripts.carpUnit] ?? 0n;
+    return d.vault === scripts.vaultHash && d.carp === held && held > 0n ? [{ u, d }] : [];
+  } catch {
+    return [];
+  }
+});
+if (lots.length === 0) throw new Error("kho tạm không có lô nào của instance kho phí này");
+const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+lots.sort((a, b) => cmp(b.d.carp, a.d.carp) || cmp(a.d.listed_at, b.d.listed_at));
+const { u: escrow, d: escrowDatum } = lots[0];
+console.log("số lô       ", lots.length, "— chọn lô nhiều CARP nhất;",
+  atEscrow.length - lots.length, "ô khác ở địa chỉ kho tạm bị bỏ qua");
 const held = escrow.assets[scripts.carpUnit] ?? 0n;
-const declared = Data.from(escrow.datum, EscrowDatum).carp;
-if (declared !== held) throw new Error(`sổ kho tạm khai ${declared} nhưng giữ ${held}`);
+if (escrowDatum.carp !== held) throw new Error(`sổ kho tạm khai ${escrowDatum.carp} nhưng giữ ${held}`);
+
+// Giá đấu giảm dần tính tại CẬN DƯỚI khoảng hiệu lực (`donation_escrow.ak`). Cận dưới là
+// một slot; hợp đồng thấy thời điểm của slot đó, nên tính giá đúng tại thời điểm ấy chứ
+// không tại đồng hồ máy. Lùi 60 giây để không bị từ chối vì đồng hồ chạy nhanh hơn mạng —
+// cận dưới sớm hơn thì giá cao hơn một chút, chiều có lợi cho kho bạc.
+const startSlot = unixTimeToSlot(NETWORK, Date.now() - 60_000);
+const priceAt = slotToUnixTime(NETWORK, startSlot);
 
 // Nộp hết một lượt: toàn bộ CARP rời kho tạm.
 const releasedCarp = held;
-const requiredLovelace =
-  (releasedCarp * BigInt(MIN_LOVELACE_PER_CARP) + CARP_SCALE - 1n) / CARP_SCALE;
+const requiredLovelace = requiredDonation(releasedCarp, escrowDatum.listed_at, priceAt);
 
 console.log("kho tạm giữ ", releasedCarp, "=", Number(releasedCarp / CARP_SCALE), "tCARP");
-console.log("sàn tỉ giá  ", MIN_LOVELACE_PER_CARP, "lovelace mỗi CARP");
+console.log("mở phiên    ", new Date(Number(escrowDatum.listed_at)).toISOString());
+console.log("tính giá lúc", new Date(priceAt).toISOString());
 console.log("phải nộp    ", requiredLovelace, "lovelace vào kho bạc Cardano");
 
 const walletUtxos = await lucid.wallet().getUtxos();
@@ -65,6 +91,9 @@ const collateral = funding[1];
 // Bộ dựng của thư viện tầng trên đã nạp sẵn đúng tham số mạng — mượn lại nó thay vì
 // khai tay từng hằng số phí, vì khai tay là chỗ lệch âm thầm với mạng thật.
 const txb = lucid.newTx().rawConfig().txBuilder;
+// Cận dưới hữu hạn là điều kiện của hợp đồng (không có thì `Donate` hỏng), và nó là mốc
+// tính giá ở trên — hai chỗ phải cùng một slot.
+txb.set_validity_start_interval(BigInt(startSlot));
 
 const redeemer = CML.PlutusData.new_constr_plutus_data(
   CML.ConstrPlutusData.new(0n, CML.PlutusDataList.new()),
@@ -113,10 +142,10 @@ txb.add_output(
 // Ô GIỮ CHỖ cho khoản nộp kho bạc: dựng như một đầu ra bình thường để bộ dựng cân đối
 // đủ tiền, rồi ngay sau đây gỡ nó ra và chuyển đúng ngần ấy sang trường nộp kho bạc.
 // Cân bằng vẫn đúng từng lovelace: `vào = ra + phí + nộp`.
-// Ô giữ chỗ gánh HAI khoản: phần nộp kho bạc, và phần phí thêm cho việc chạy hợp đồng
-// (bộ dựng tính phí khi chi phí thực thi còn bằng 0, nên phải bù tay sau).
-const FEE_SLACK = 1_500_000n;
-const placeholderLovelace = requiredLovelace + FEE_SLACK;
+// Phí bộ dựng tính ra ĐÃ gồm chi phí thực thi khai ở trên (đo trên Emulator: phí 432 471 =
+// 44 × kích thước + 155 381 + giá ExUnits). Gỡ ô giữ chỗ chỉ làm thân giao dịch nhỏ đi, nên phí
+// cũ vẫn đủ; không bù thêm.
+const placeholderLovelace = requiredLovelace;
 txb.add_output(
   CML.TransactionOutputBuilder.new()
     .with_address(buyer)
@@ -144,7 +173,7 @@ for (let i = 0; i < oldOuts.len(); i++) {
 }
 if (!removed) throw new Error("không tìm thấy ô giữ chỗ để gỡ — dừng, đừng đoán");
 
-const body = CML.TransactionBody.new(oldBody.inputs(), keptOuts, oldBody.fee() + FEE_SLACK);
+const body = CML.TransactionBody.new(oldBody.inputs(), keptOuts, oldBody.fee());
 const carry = [
   ["set_ttl", "ttl"], ["set_validity_interval_start", "validity_interval_start"],
   ["set_network_id", "network_id"], ["set_script_data_hash", "script_data_hash"],

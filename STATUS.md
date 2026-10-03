@@ -10,7 +10,7 @@ carried both stale and never-true counts before (see "History").
 | Part | Where | State |
 |---|---|---|
 | MAGIC pricing, OriLife side | `src/`, `tests/` | parse `op_declaration`, quote against a PriceParam beacon datum, plan ConsumeMAGIC — pure code |
-| Fee vault + donation escrow | `onchain/` | tCARP prototype on Preprod — unchanged by the MAGIC rewrite |
+| Fee vault + fee inbox + donation escrow | `onchain/` | tCARP prototype; ledger NFT, fee inbox and descending auction pass the Emulator lifecycle, not deployed |
 | LAMP prototype | removed; record in `docs/lamp-prototype.md` | Preview custody address still holds assets |
 
 ## Checks — 2026-10-02
@@ -79,6 +79,31 @@ the whole suite run again; every one turned it red:
    recorded addresses stay as written: they are what is on Preprod, and the patched revision has
    never been deployed, so it has no address to record. Read `deployed_preprod.json` as a log of
    what ran, not as a pointer to what the code now builds.
+
+## Onchain — ledger NFT, fee inbox, descending auction (2026-10-02)
+
+5. `fee_vault` now identifies its ledger by a one-shot NFT (`seed` parameter, minted by `Open`,
+   burnt by `Close`); any other UTxO at the vault address can only be swept into the ledger by
+   `Collect`. New validator `fee_inbox` receives the platform fee as a plain output with no datum
+   and lets anyone sweep it into the ledger (withdraw-zero, one batch check). `donation_escrow`
+   prices `Donate` by a linear descending auction from `start_lovelace_per_carp` to
+   `min_lovelace_per_carp` over `decay_ms`, opened at `listed_at`, which `Skim` pins to the upper
+   validity bound. All three hashes change again; this revision has never been deployed.
+   Hardening in the same revision: `Donate` runs with exactly one redeemer (the whole-transaction
+   `treasury_donation` cannot be shared by two escrow instances), releases at least
+   `min(held, lot_min)`, and leaves at most one remainder with CARP > 0 and no less lovelace;
+   `Collect` requires the ledger to gain at least the CARP of every other script-locked input, which
+   covers any number of inbox versions pointing at one vault.
+6. Checks, from `onchain/orilife_treasury` then the repository root:
+   ```
+   aiken check                                  → read `summary.failed` when piped to JSON; the exit code stays 0
+   node onchain/scripts/lifecycle_emulator.mjs  → runs 01 → 06 on the Lucid Emulator, phase-two on every redeemer, ends with "ĐẠT"
+   ```
+   A mutation of `requiredDonation` to one lovelace below the on-chain price made `05` fail with
+   `failed script execution`; restored, it passes.
+7. Not pinned by the checks above: the ledger rules of Preprod itself (value balance, the
+   `treasury_donation` field, script stake credential registration) — the Emulator does not
+   enforce them; and the auction parameters are test values for the Preprod instance only.
 
 ## History
 
