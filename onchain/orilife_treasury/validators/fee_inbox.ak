@@ -37,8 +37,9 @@ use cardano/certificate.{
 }
 use cardano/transaction.{Input, NoDatum, Output, OutputReference, Transaction}
 use orilife/fixtures.{
-  carp_name, carp_policy, inbox_hash, inline, input_from, ref_at, script_output,
-  stranger_key, tx, value_with_carp, vault_hash, wallet_output, with_vault_nft,
+  carp_name, carp_policy, inbox_hash, inline, input_from, operator_key, ref_at,
+  script_output, stranger_key, tx, value_with_carp, vault_hash, wallet_output,
+  with_vault_nft,
 }
 use orilife/types.{VaultDatum, vault_nft_name}
 
@@ -186,7 +187,7 @@ fn ledger(carp: Int) -> Output {
   script_output(
     vault_hash,
     with_vault_nft(value_with_carp(2_000_000, carp)),
-    inline(VaultDatum { collected: carp, skimmed: 0 }),
+    inline(VaultDatum { collected: carp, skimmed: 0, operator_key }),
   )
 }
 
@@ -234,7 +235,7 @@ test sweep_fails_without_the_vault_nft_input() {
         script_output(
           vault_hash,
           value_with_carp(2_000_000, 0),
-          inline(VaultDatum { collected: 0, skimmed: 0 }),
+          inline(VaultDatum { collected: 0, skimmed: 0, operator_key }),
         ),
         inbox_utxo(2_000_000, 100),
       ],
@@ -251,7 +252,7 @@ test sweep_fails_without_the_vault_nft_output() {
         script_output(
           vault_hash,
           value_with_carp(2_000_000, 100),
-          inline(VaultDatum { collected: 100, skimmed: 0 }),
+          inline(VaultDatum { collected: 100, skimmed: 0, operator_key }),
         ),
         wallet_output(
           from_verification_key(stranger_key),

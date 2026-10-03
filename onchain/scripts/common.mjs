@@ -136,7 +136,10 @@ export function archiveClosedInstance() {
 /// `seed` = `{ txHash, outputIndex }` của một UTxO ví mà giao dịch mở kho sẽ tiêu. Nó làm
 /// NFT sổ thành đúc-một-lần: tiêu xong thì không giao dịch nào thoả `Open` được nữa. Nên
 /// `seed` phải được chọn và GHI vào tệp trạng thái TRƯỚC khi mở kho (`02_open_vault.mjs`).
-export function buildScripts({ carpPolicy, carpName, operatorKeyHash, seed }) {
+///
+/// Khoá vận hành KHÔNG còn là tham số kho: nó nằm trong datum ô sổ (`schemas.mjs` ▸
+/// `VaultDatum.operator_key`), nên xoay khoá không đổi băm kho, NFT sổ hay địa chỉ hộp thư.
+export function buildScripts({ carpPolicy, carpName, seed }) {
   if (!seed) throw new Error("thiếu `seed` — chạy 02_open_vault.mjs để chọn và ghi seed trước");
   const nameHex = fromText(carpName);
 
@@ -160,7 +163,6 @@ export function buildScripts({ carpPolicy, carpName, operatorKeyHash, seed }) {
       nameHex,
       BigInt(SKIM_BPS),
       escrowHash,
-      operatorKeyHash,
       BigInt(LISTING_WINDOW_MS),
       new Constr(0, [seed.txHash, BigInt(seed.outputIndex)]),
     ]),

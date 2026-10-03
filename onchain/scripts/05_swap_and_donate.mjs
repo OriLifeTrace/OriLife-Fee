@@ -37,7 +37,7 @@ const s = state();
 const lucid = await connect();
 const walletAddress = await lucid.wallet().address();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, operatorKeyHash: s.operatorKeyHash, seed: s.seed,
+  carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed,
 });
 
 // Ai cũng `Skim` được, nên địa chỉ kho tạm có thể giữ nhiều lô cùng lúc. Đòi "đúng 1 ô" thì

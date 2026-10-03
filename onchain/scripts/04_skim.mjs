@@ -15,7 +15,7 @@ import { VaultDatum, EscrowDatum, VaultRedeemer } from "./schemas.mjs";
 const s = state();
 const lucid = await connect();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, operatorKeyHash: s.operatorKeyHash, seed: s.seed,
+  carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed,
 });
 
 const { ledger: vault } = splitVaultUtxos(
@@ -30,7 +30,8 @@ const obligation =
   (before.collected * BigInt(SKIM_BPS) + 9_999n) / 10_000n - before.skimmed;
 if (obligation <= 0n) { console.log("không còn nghĩa vụ nào để trích"); process.exit(0); }
 
-const after = { collected: before.collected, skimmed: before.skimmed + obligation };
+// `...before` chở `collected` và `operator_key` sang nguyên vẹn.
+const after = { ...before, skimmed: before.skimmed + obligation };
 const held = vault.assets[scripts.carpUnit] ?? 0n;
 
 // Khoảng hiệu lực tròn giây: Preprod một slot = 1 giây, nên mốc tròn giây đi lên chuỗi rồi

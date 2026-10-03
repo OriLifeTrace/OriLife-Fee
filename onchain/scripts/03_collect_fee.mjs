@@ -31,7 +31,7 @@ const MAX_STRAYS = 4;
 const s = state();
 const lucid = await connect();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, operatorKeyHash: s.operatorKeyHash, seed: s.seed,
+  carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed,
 });
 
 // ── Bước 1: một đầu ra CARP tới hộp thư, không datum ─────────────────────────
@@ -59,7 +59,8 @@ const amount = [...inbox, ...strays].reduce((acc, u) => acc + carpOf(u), 0n);
 if (amount <= 0n) { console.log("hộp thư không có CARP để gom"); process.exit(0); }
 
 const before = Data.from(vault.datum, VaultDatum);
-const after = { collected: before.collected + amount, skimmed: before.skimmed };
+// `...before` chở `operator_key` sang nguyên vẹn — `Collect` đổi khoá là bị hợp đồng bác.
+const after = { ...before, collected: before.collected + amount };
 const collect = Data.to({ Collect: { amount } }, VaultRedeemer);
 
 console.log("gom      ", inbox.length, "ô hộp thư +", strays.length, "ô lạc =", amount, "đơn vị");

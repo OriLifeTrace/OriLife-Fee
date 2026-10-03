@@ -32,8 +32,8 @@ ConsumeMAGIC ──(CARP, không datum)──▶ fee_inbox ──gom (ai cũng g
 **Sổ được định danh bằng NFT, không bằng địa chỉ.** Ô sổ là UTxO DUY NHẤT ở địa chỉ kho giữ
 NFT `orilife-fee-vault`, chính sách đúc = chính băm `fee_vault`. NFT đúc một lần: hợp đồng nhận
 `seed` (một UTxO ví) làm tham số, và lệnh đúc `Open` đòi giao dịch tiêu đúng UTxO đó. `Open`
-còn ép ô sổ mở ra ở đúng địa chỉ kho, sổ `0/0`, không CARP, không reference script. `Close`
-phải đốt NFT. Không có NFT thì một UTxO bất kỳ mang datum tự đặt ở địa chỉ kho trông y hệt sổ.
+còn ép ô sổ mở ra ở đúng địa chỉ kho, sổ `0/0`, không CARP, không reference script, và khoá
+vận hành ghi trong sổ phải ký giao dịch mở. `Close` phải đốt NFT. Không có NFT thì một UTxO bất kỳ mang datum tự đặt ở địa chỉ kho trông y hệt sổ.
 
 Mọi UTxO khác ở địa chỉ kho là **ô lạc** (gửi nhầm, có hay không có datum). Ô lạc chỉ được
 tiêu cùng ô sổ trong một `Collect`, và sổ phải tăng ít nhất bằng số CARP của ô lạc. `Skim` và
@@ -42,19 +42,31 @@ nhận ô lạc có CARP. Hệ quả cần biết: phần **không phải CARP**
 lạc (ADA, token lạ, reference script) ai gom thì người đó lấy — nên đừng bao giờ đặt reference
 script ở địa chỉ kho hay hộp thư.
 
-Sổ nằm trong datum, hai con số, ai cũng đọc được thẳng từ UTxO:
+Sổ nằm trong datum, ai cũng đọc được thẳng từ UTxO:
 
 | Trường | Nghĩa |
 |---|---|
 | `collected` | tổng CARP đã từng chảy vào, cộng dồn — **không phải** số dư hiện tại |
 | `skimmed` | tổng CARP đã chuyển sang kho tạm, cộng dồn |
+| `operator_key` | băm khoá vận hành hiện tại. Nằm trong datum, không phải tham số biên dịch, để xoay khoá không đổi băm kho |
 
 | Lệnh | Ai gọi được | Luật |
 |---|---|---|
-| `Collect { amount }` | bất kỳ ai | `collected` tăng ĐÚNG bằng lượng CARP thật sự vào ô sổ, và không ít hơn tổng CARP của MỌI đầu vào khoá bằng script khác trong giao dịch |
-| `Skim { amount }` | bất kỳ ai | phần trích đi đúng về kho tạm, đúng instance kho phí này, không vượt nghĩa vụ, và mở phiên đấu giá tại đúng cận trên khoảng hiệu lực |
-| `Operate` | chỉ khoá vận hành | chỉ RÚT được, không nạp được; phần còn lại phải **phủ được nghĩa vụ còn nợ** |
-| `Close` | chỉ khoá vận hành | chỉ khi nghĩa vụ đã trả HẾT; đốt NFT sổ; không để lại ô kho nào |
+| `Collect { amount }` | bất kỳ ai | `collected` tăng ĐÚNG bằng lượng CARP thật sự vào ô sổ, và không ít hơn tổng CARP của MỌI đầu vào khoá bằng script khác trong giao dịch; `operator_key` giữ nguyên |
+| `Skim { amount }` | bất kỳ ai | phần trích đi đúng về kho tạm, đúng instance kho phí này, không vượt nghĩa vụ, và mở phiên đấu giá tại đúng cận trên khoảng hiệu lực; `operator_key` giữ nguyên |
+| `Operate` | chỉ khoá vận hành (trong datum đầu vào) | chỉ RÚT được, không nạp được; phần còn lại phải **phủ được nghĩa vụ còn nợ**; `operator_key` giữ nguyên |
+| `Rotate` | khoá vận hành hiện tại **và** khoá mới cùng ký | ô sổ ở lại đúng địa chỉ, giá trị y nguyên (ADA, NFT, CARP, token khác), `collected`/`skimmed` y nguyên; chỉ `operator_key` đổi; không nhận ô lạc có CARP |
+| `Close` | chỉ khoá vận hành (trong datum đầu vào) | chỉ khi nghĩa vụ đã trả HẾT; đốt NFT sổ; không để lại ô kho nào |
+
+**Xoay khoá vận hành là `Rotate`, không phải `Close`.** `Close` là tắt VĨNH VIỄN: NFT sổ bị đốt,
+và `fee_inbox` chỉ gom được vào một sổ còn giữ NFT của đúng băm kho nó bake. Trước khi `Close`
+phải gom hết hộp thư — ô CARP nào còn ở hộp thư lúc đóng là mất đường vào sổ mãi mãi. Hợp đồng
+không chặn được điều này: ô hộp thư không nằm trong giao dịch đóng kho, và một validator không
+thấy UTxO ngoài giao dịch của nó. `06_close_vault.mjs` chặn ở ngoài chuỗi: còn ô CARP gom được ở
+hộp thư hoặc địa chỉ kho thì dừng. Ai dựng giao dịch `Close` bằng tay thì không có hàng rào đó.
+
+Khoá mới phải ký `Rotate` vì một băm không ai cầm khoá ghi vào sổ là mất vĩnh viễn `Operate`,
+`Rotate` và `Close`. Cùng lý do, `Open` đòi khoá ghi trong sổ trắng ký giao dịch mở.
 
 Câu chịu lực là dòng `Operate`. Hai dòng trên chỉ là kế toán — kế toán đúng mà tiền vẫn đi hết
 thì vô nghĩa.
@@ -147,10 +159,12 @@ không chỉ viết bài kiểm rồi tin nó có tác dụng.
 | 3 | `Operate` là cửa NẠP không ghi sổ — bơm CARP vào kho mà `collected` đứng yên | `carp_after <= carp_before` | `operate_cannot_add_carp_without_recording_it` |
 | 4 | Không đóng được kho, mà mọi nhánh ép `lovelace ra >= lovelace vào` ⟹ ADA giữ chỗ nằm lại vĩnh viễn | thêm `Close`, đòi nghĩa vụ đã trả hết | `close_requires_the_obligation_to_be_settled` |
 
-Lỗ 1 và 2 phải vá CÙNG LƯỢT, không phải trùng hợp: kho tạm không nhận `skim_bps` hay
-`operator_key` làm tham số, và thứ tự dựng là escrow TRƯỚC rồi vault mới nuốt `escrowHash`.
-Nên xoay khoá vận hành (đường vá của lỗ 4) làm băm vault đổi mà băm kho tạm không đổi — tức
-bản vá lỗ 4 tự tạo ra tiền đề cho lỗ 2.
+Lỗ 1 và 2 phải vá CÙNG LƯỢT, không phải trùng hợp: kho tạm không nhận `skim_bps` hay `seed`
+làm tham số, và thứ tự dựng là escrow TRƯỚC rồi vault mới nuốt `escrowHash`. Nên đổi tỉ lệ
+trích hay mở instance mới làm băm vault đổi mà băm kho tạm không đổi — hai instance kho phí
+cùng sống với một kho tạm là tiền đề của lỗ 2. (Bản trước còn dùng "đóng kho rồi mở instance
+mới" làm đường xoay khoá vận hành; nay khoá nằm trong datum và xoay bằng `Rotate`, băm vault
+không đổi.)
 
 Còn một chỗ nữa, là lỗi TÀI LIỆU chứ không phải lỗi tiền: `math.ak` cũ hứa "nghĩa vụ làm tròn
 lên" trong khi `fee_vault.ak` dùng `floor_div` cho cả nghĩa vụ lẫn trần được trích. Nay chỉ còn
@@ -189,8 +203,12 @@ node onchain/scripts/02_open_vault.mjs     # chọn seed, đúc NFT sổ, đăng
 node onchain/scripts/03_collect_fee.mjs    # nộp phí vào hộp thư, rồi gom hộp thư + ô lạc vào sổ
 node onchain/scripts/04_skim.mjs           # trích 10%, mở phiên đấu giá
 node onchain/scripts/05_swap_and_donate.mjs
-node onchain/scripts/06_close_vault.mjs    # đốt NFT, thu ADA giữ chỗ
+NEW_OPERATOR_SEED='<cụm từ ví khoá mới>' node onchain/scripts/07_rotate_operator.mjs   # xoay khoá vận hành tại chỗ (khi cần)
+node onchain/scripts/06_close_vault.mjs    # TẮT VĨNH VIỄN: đốt NFT, thu ADA giữ chỗ — chạy bằng ví của khoá vận hành trong sổ
 ```
+
+`07` không đổi băm kho, địa chỉ kho, NFT sổ hay địa chỉ hộp thư. Sau `07`, `06` phải chạy bằng
+ví của khoá MỚI (`06` đối chiếu ví với `operator_key` trong sổ và dừng nếu lệch).
 
 Trạng thái đã triển khai ghi vào `scripts/deployed_preprod.json`; kịch bản đọc lại tệp đó
 nên chạy lại không đúc thêm hay mở thêm kho. Tệp đó là **nhật ký**: `02` dời instance đã
@@ -201,7 +219,10 @@ với tệp trạng thái tạm. Emulator không tự chạy validator lúc nh�
 lại phase-two (`eval_phase_two_raw`, cùng bộ đánh giá Lucid dùng) cho MỌI giao dịch có
 redeemer — kể cả `05`, giao dịch dựng tay không đi qua bước chạy thử của bộ dựng. Kịch bản
 gồm một ô lạc ở địa chỉ kho và một ô lạc ở hộp thư, để lượt gom thứ hai phải đưa cả hai vào
-sổ. Hai chỗ Emulator KHÔNG thay được Preprod: nó không kiểm cân bằng giá trị, và không kiểm
+sổ. Sau `05`, bộ chạy xoay khoá vận hành bằng `07`, kiểm địa chỉ kho/NFT/hộp thư và giá trị ô sổ
+không đổi, nộp phí vào hộp thư rồi gom vào CÙNG sổ, trích và nộp lần nữa, thử `Close` bằng khoá
+CŨ (phải bị validator bác; đối chứng cùng bộ dựng với khoá mới thì qua), rồi đóng kho bằng `06`
+dưới ví khoá MỚI. Hai chỗ Emulator KHÔNG thay được Preprod: nó không kiểm cân bằng giá trị, và không kiểm
 trường `treasury_donation` ở tầng sổ cái — validator thấy trường đó, sổ cái giả thì không.
 
 ## Đã chạy thật trên Preprod — 2026-08-21
@@ -250,19 +271,20 @@ nằm lại đó làm bằng chứng thay vì làm lời kể.
 ## Chi phí thực thi đo trên Emulator
 
 Đo bằng `lifecycle_emulator.mjs` (phase-two trên giao dịch thật sắp nộp, không phải ước
-lượng); số chạy lại được bất cứ lúc nào, bảng dưới là một lần chạy ngày 2026-10-02. Trần mỗi
-giao dịch của Preprod là 14 M bộ nhớ / 10 G bước.
+lượng); số chạy lại được bất cứ lúc nào, bảng dưới là một lần chạy ngày 2026-10-03 (bản có
+`operator_key` trong datum và `Rotate`). Trần mỗi giao dịch của Preprod là 14 M bộ nhớ / 10 G bước.
 
 | Giao dịch | Redeemer | Bộ nhớ | Bước |
 |---|---|---|---|
-| mở kho | đúc NFT `Open` | 106 653 | 39 412 045 |
+| mở kho | đúc NFT `Open` | 122 354 | 43 483 039 |
 | mở kho | đăng ký credential hộp thư | 17 049 | 4 605 712 |
-| gom 29 ô hộp thư + 2 ô lạc | ô sổ `Collect` | 1 515 301 | 510 739 404 |
+| gom 29 ô hộp thư + 2 ô lạc | ô sổ `Collect` | 1 518 263 | 511 642 871 |
 | gom 29 ô hộp thư + 2 ô lạc | `withdraw` hộp thư (cả lô) | 1 143 722 | 378 332 339 |
-| gom 29 ô hộp thư + 2 ô lạc | **cả giao dịch** (33 redeemer: 32 spend + 1 withdraw) | **6 701 822** | **2 978 733 099** |
-| trích 10% | ô sổ `Skim` | 401 682 | 138 172 594 |
+| gom 29 ô hộp thư + 2 ô lạc | **cả giao dịch** (33 redeemer: 32 spend + 1 withdraw) | **6 704 120** | **2 979 500 282** |
+| trích 10% | ô sổ `Skim` | 400 750 | 136 498 584 |
 | đổi + nộp | ô kho tạm `Donate` | 165 242 | 59 792 207 |
-| đóng kho | ô sổ `Close` + đốt NFT | 177 176 + 33 426 | 56 851 057 + 10 239 686 |
+| xoay khoá vận hành | ô sổ `Rotate` | 324 647 | 107 538 944 |
+| đóng kho | ô sổ `Close` + đốt NFT | 177 640 + 33 494 | 57 079 870 + 10 235 544 |
 
 Mỗi ô hộp thư tự nó rẻ (37 K → 147 K bộ nhớ, tăng dần theo vị trí trong giao dịch); phần nặng là
 ô sổ và mỗi ô lạc, vì cả hai cộng CARP trên mọi đầu vào. Vì vậy `03` đặt trần riêng cho ô lạc (4)

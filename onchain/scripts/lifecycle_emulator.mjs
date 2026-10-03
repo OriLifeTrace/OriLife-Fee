@@ -1,4 +1,5 @@
-// Chạy trọn vòng đời kho phí 01 → 06 trên Emulator, KHÔNG chạm Preprod.
+// Chạy trọn vòng đời kho phí 01 → 05 → 07 (xoay khoá) → 03/04/05 lần nữa → 06 (đóng bằng
+// khoá mới) trên Emulator, KHÔNG chạm Preprod.
 //
 //   node onchain/scripts/lifecycle_emulator.mjs
 //
@@ -26,16 +27,25 @@ import {
   Lucid, Emulator, generateEmulatorAccount, Data, createCostModels,
   utxoToTransactionInput, utxoToTransactionOutput, SLOT_CONFIG_NETWORK,
 } from "@lucid-evolution/lucid";
+import { VaultDatum, VaultRedeemer, VaultMint } from "./schemas.mjs";
 
 const stateDir = mkdtempSync(join(tmpdir(), "orilife-fee-emulator-"));
 process.env.ORILIFE_FEE_STATE_FILE = join(stateDir, "state.json");
+// `common.mjs` đọc đường tệp trạng thái lúc NẠP module. Nạp tĩnh thì `import` được kéo lên
+// trước dòng trên, và mọi kịch bản (dùng chung bản module đã nạp) sẽ ghi vào nhật ký Preprod
+// thật. Nên chỉ nạp động, sau khi đã đặt biến.
+const { buildScripts, keyHashOf } = await import("./common.mjs");
 
 const account = generateEmulatorAccount({ lovelace: 2_000_000_000n });
-// Ba UTxO chỉ-ADA: `05` cần một ô trả tiền và một ô thế chấp riêng.
+// Khoá vận hành MỚI cho bước xoay khoá (`07`), rồi đóng kho bằng nó (`06`).
+const newOperator = generateEmulatorAccount({ lovelace: 100_000_000n });
+// Ba UTxO chỉ-ADA: `05` cần một ô trả tiền và một ô thế chấp riêng. Ví khoá mới cũng hai ô.
 const emulator = new Emulator([
   account,
   { address: account.address, assets: { lovelace: 500_000_000n } },
   { address: account.address, assets: { lovelace: 500_000_000n } },
+  newOperator,
+  { address: newOperator.address, assets: { lovelace: 100_000_000n } },
 ]);
 // Mốc 0 tròn giây như Preprod: kịch bản `04` dựa vào việc mốc tròn giây đi lên chuỗi rồi
 // quay về hợp đồng đúng nguyên giá trị.
@@ -209,6 +219,76 @@ await step("05_swap_and_donate.mjs");
   check(donated > floor && donated < start, `khoản nộp ${donated} nằm giữa sàn ${floor} và giá mở ${start}`);
 }
 
+// ── Xoay khoá vận hành tại chỗ, rồi chứng minh hộp thư vẫn gom được vào CÙNG sổ ─────────
+const ledgerUtxo = async () => {
+  const s = st();
+  return (await lucid.utxosAt(s.vaultAddress)).find((u) => (u.assets[s.vaultNftUnit] ?? 0n) === 1n);
+};
+const ledgerKey = async () => Data.from((await ledgerUtxo()).datum, VaultDatum).operator_key;
+const oldKey = keyHashOf(account.address);
+const newKey = keyHashOf(newOperator.address);
+check((await ledgerKey()) === oldKey, "trước khi xoay: khoá trong sổ là khoá ví mở kho");
+const beforeRotate = { ...st() };
+const assetsBeforeRotate = (await ledgerUtxo()).assets;
+
+process.env.NEW_OPERATOR_SEED = newOperator.seedPhrase;
+await step("07_rotate_operator.mjs");
+delete process.env.NEW_OPERATOR_SEED;
+{
+  const s = st();
+  const after = await ledgerUtxo();
+  const d = Data.from(after.datum, VaultDatum);
+  check(d.operator_key === newKey, "sau khi xoay: khoá trong sổ là khoá mới");
+  check(
+    d.collected.toString() === beforeRotate.collected && d.skimmed.toString() === beforeRotate.skimmed,
+    "sổ giữ nguyên collected/skimmed",
+  );
+  check(
+    s.vaultAddress === beforeRotate.vaultAddress && s.vaultNftUnit === beforeRotate.vaultNftUnit &&
+      s.inboxAddress === beforeRotate.inboxAddress,
+    "địa chỉ kho, NFT sổ, địa chỉ hộp thư không đổi",
+  );
+  const same = JSON.stringify(Object.entries(after.assets).sort(), (_, v) => typeof v === "bigint" ? v.toString() : v) ===
+    JSON.stringify(Object.entries(assetsBeforeRotate).sort(), (_, v) => typeof v === "bigint" ? v.toString() : v);
+  check(same, "giá trị ô sổ y nguyên (ADA, NFT, CARP)");
+}
+
+// Nộp phí vào hộp thư và gom — sau khi xoay khoá. Đây là chỗ bản cũ chết: xoay khoá = đóng kho,
+// NFT sổ bị đốt, ô hộp thư này không còn sổ nào để vào.
+await step("03_collect_fee.mjs");
+check(st().collected === ((3_042n) * UNIT).toString(), "sau khi xoay: hộp thư vẫn gom được vào cùng sổ (3 042 tCARP)");
+await step("04_skim.mjs");
+emulator.awaitBlock(4_320);
+await step("05_swap_and_donate.mjs");
+
+// Khoá CŨ thử đóng kho: cùng hình dạng giao dịch với `06`, chỉ khác người ký. Nghĩa vụ đã trả
+// hết (dòng trên), nên lý do duy nhất để bị bác là khoá.
+{
+  const s = st();
+  const scripts = buildScripts({ carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed });
+  const buildClose = async (signer) => lucid
+    .newTx()
+    .collectFrom([await ledgerUtxo()], Data.to("Close", VaultRedeemer))
+    .mintAssets({ [scripts.vaultNftUnit]: -1n }, Data.to("Burn", VaultMint))
+    .attach.SpendingValidator(scripts.vaultScript)
+    .addSignerKey(signer)
+    .complete();
+  let rejected = false;
+  try {
+    await buildClose(oldKey);
+  } catch (e) {
+    rejected = true;
+    console.log("  khoá cũ:", String(e.message ?? e).split("\n")[0].slice(0, 160));
+  }
+  check(rejected, "khoá CŨ sau khi xoay không đóng được kho (validator bác ở bước dựng)");
+  // Đối chứng: đúng bộ dựng đó, chỉ đổi người ký sang khoá mới, thì validator cho qua (chỉ dựng,
+  // không nộp) — nên lý do bị bác ở trên là khoá, không phải hình dạng giao dịch.
+  await buildClose(newKey);
+  check(true, "đối chứng: cùng bộ dựng với khoá MỚI thì validator cho qua");
+}
+
+// Đóng kho bằng khoá MỚI: chọn ví khoá mới rồi chạy đúng kịch bản `06`.
+lucid.selectWallet.fromSeed(newOperator.seedPhrase);
 await step("06_close_vault.mjs");
 {
   const s = st();

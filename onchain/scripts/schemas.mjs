@@ -3,9 +3,14 @@
 
 import { Data } from "@lucid-evolution/lucid";
 
+/// Sổ kho phí. `operator_key` là băm khoá vận hành — nằm trong datum (không phải tham số kho)
+/// để `Rotate` đổi được tại chỗ mà băm kho và NFT sổ giữ nguyên. Thứ tự trường khớp
+/// `types.ak` ▸ `VaultDatum`. Mọi kịch bản dựng sổ đi ra phải chép `operator_key` từ sổ đi
+/// vào (`{ ...before, ... }`) — trừ `07_rotate_operator.mjs`.
 export const VaultDatum = Data.Object({
   collected: Data.Integer(),
   skimmed: Data.Integer(),
+  operator_key: Data.Bytes(),
 });
 
 /// `OutputReference` của stdlib: `Constr 0 [transaction_id, output_index]`.
@@ -40,7 +45,7 @@ export const EscrowDatum = Data.Object({
 /// Thứ tự khớp `types.ak` ▸ `VaultMint`.
 export const VaultMint = Data.Enum([Data.Literal("Open"), Data.Literal("Burn")]);
 
-/// Redeemer của kho phí: Collect{amount} · Skim{amount} · Operate · Close
+/// Redeemer của kho phí: Collect{amount} · Skim{amount} · Operate · Close · Rotate
 ///
 /// Thứ tự PHẢI khớp thứ tự khai trong `types.ak` — chỉ số constructor là thứ đi lên
 /// chuỗi, tên thì không. Thêm nhánh vào giữa là đổi nghĩa của mọi redeemer đã ký.
@@ -49,6 +54,7 @@ export const VaultRedeemer = Data.Enum([
   Data.Object({ Skim: Data.Object({ amount: Data.Integer() }) }),
   Data.Literal("Operate"),
   Data.Literal("Close"),
+  Data.Literal("Rotate"),
 ]);
 
 export const EscrowRedeemer = Data.Enum([Data.Literal("Donate")]);

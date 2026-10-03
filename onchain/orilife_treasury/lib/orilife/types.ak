@@ -14,8 +14,8 @@ use cardano/transaction.{OutputReference}
 /// chung đúng chuỗi byte này (hex `6f72696c6966652d6665652d7661756c74`).
 pub const vault_nft_name: AssetName = "orilife-fee-vault"
 
-/// Trạng thái kho phí. Hai con số này là toàn bộ lời khai của kho, và ai cũng đọc được
-/// chúng trực tiếp từ UTxO — không phải hỏi máy chủ nào.
+/// Trạng thái kho phí. Hai con số đầu là toàn bộ lời khai kế toán của kho, và ai cũng đọc
+/// được chúng trực tiếp từ UTxO — không phải hỏi máy chủ nào.
 ///
 /// `collected` chỉ tăng, `skimmed` chỉ tăng, và `skimmed` không bao giờ vượt phần
 /// nghĩa vụ tính trên `collected`. Ba câu đó là toàn bộ cơ chế bảo đảm lời hứa 10%.
@@ -24,6 +24,14 @@ pub type VaultDatum {
   collected: Int,
   /// Tổng CARP đã chuyển sang kho tạm chờ đổi ADA. Cũng cộng dồn.
   skimmed: Int,
+  /// Băm khoá vận hành OriLife (verification key hash). Cần cho `Operate`, `Rotate`,
+  /// `Close`; nộp phí và trích nghĩa vụ thì ai cũng gọi được.
+  ///
+  /// Vì sao nằm trong datum chứ không là tham số biên dịch: tham số thì đổi khoá là đổi băm
+  /// kho, tức phải `Close` instance cũ — mà `Close` đốt NFT sổ, và `fee_inbox` bake băm kho
+  /// đó: mọi ô CARP còn trong hộp thư mất đường vào sổ vĩnh viễn. Trong datum thì `Rotate`
+  /// đổi khoá tại chỗ, băm kho và NFT giữ nguyên, hộp thư vẫn gom được.
+  operator_key: ByteArray,
 }
 
 pub type VaultRedeemer {
@@ -38,15 +46,24 @@ pub type VaultRedeemer {
   /// Đóng kho. Chỉ được khi nghĩa vụ đã trả hết; sau đó UTxO kho không còn tồn tại.
   ///
   /// Vì sao phải có: không có nó thì ADA giữ chỗ nằm lại vĩnh viễn (mọi nhánh khác đều
-  /// ép `lovelace_of(ra) >= lovelace_of(vào)`, tức ADA chỉ có đường vào), và `operator_key`
-  /// là tham số biên dịch nên xoay khoá vận hành là phải dựng instance mới — mà instance
-  /// cũ thì không đóng lại được. Đóng được kho là điều kiện để xoay khoá mà không bỏ của.
+  /// ép `lovelace_of(ra) >= lovelace_of(vào)`, tức ADA chỉ có đường vào).
+  ///
+  /// `Close` là TẮT VĨNH VIỄN, không phải đường xoay khoá (xoay khoá là `Rotate`). NFT sổ
+  /// bị đốt, nên mọi ô CARP còn ở hộp thư (`fee_inbox`) trỏ về kho này không còn đường vào
+  /// sổ. Hợp đồng không chặn được việc đó: ô hộp thư không nằm trong giao dịch đóng kho, và
+  /// validator không thấy UTxO ngoài giao dịch. Trước khi đóng phải gom hết hộp thư.
   Close
+  /// Xoay khoá vận hành. Ô sổ đi ra giữ nguyên địa chỉ, giá trị (kể cả NFT), `collected`,
+  /// `skimmed`; chỉ `operator_key` đổi. Cần chữ ký của khoá HIỆN TẠI (trong datum đầu vào)
+  /// VÀ của khoá MỚI — khoá mới không ký được thì không ai còn gọi được `Operate`/`Close`.
+  /// Đặt CUỐI để không đổi chỉ số constructor của bốn nhánh đã có.
+  Rotate
 }
 
 /// Mặt đúc của kho phí. Chỉ có hai việc: đúc NFT sổ khi mở kho, đốt nó khi đóng kho.
 pub type VaultMint {
-  /// Mở kho: tiêu `seed`, đúc đúng một NFT vào một ô sổ trắng.
+  /// Mở kho: tiêu `seed`, đúc đúng một NFT vào một ô sổ trắng, khoá vận hành trong datum
+  /// phải ký.
   Open
   /// Đốt NFT. Đường duy nhất tới đây là `Close` — mọi nhánh spend khác đòi ô sổ đi ra
   /// giữ NFT.

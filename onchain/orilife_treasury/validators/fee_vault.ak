@@ -24,10 +24,10 @@
 ////    và MỘT output ở kho tạm thoả điều kiện cho CẢ HAI. Hai lần `skimmed` tăng, một
 ////    lần CARP rời kho. Nay khoản trích phải khai đúng băm kho phí đã trích ra nó.
 ////
-////    Chỗ này không phải giả định xa: kho tạm KHÔNG nhận `skim_bps` hay `operator_key`
-////    làm tham số, và thứ tự dựng là escrow TRƯỚC rồi vault mới nuốt `escrowHash`. Nên
-////    hễ đổi tỉ lệ trích hoặc xoay khoá vận hành là băm vault đổi mà băm kho tạm KHÔNG
-////    đổi — tiền đề của lỗ này tự sinh ra từ chính việc vá lỗ `Close` bên dưới.
+////    Chỗ này không phải giả định xa: kho tạm KHÔNG nhận `skim_bps` hay `seed` làm tham
+////    số, và thứ tự dựng là escrow TRƯỚC rồi vault mới nuốt `escrowHash`. Nên hễ đổi tỉ lệ
+////    trích hoặc mở instance mới là băm vault đổi mà băm kho tạm KHÔNG đổi. (Xoay khoá
+////    vận hành thì không còn đổi băm vault: khoá nằm trong datum, xem mục 9.)
 ////
 //// 2. Khoản trích phải khai `parent = None`. Xem đầu `donation_escrow.ak`: kho tạm phân
 ////    biệt phần DƯ với khoản MỚI bằng trường đó, nên kho phí phải đóng dấu đúng.
@@ -37,9 +37,8 @@
 ////    bao giờ sinh nghĩa vụ.
 ////
 //// 4. Không có đường đóng kho, mà mọi nhánh đều ép `lovelace_of(ra) >= lovelace_of(vào)`
-////    ⟹ ADA giữ chỗ vào một chiều, nằm lại vĩnh viễn. Thêm `Close`, và nó cũng là đường
-////    xoay `operator_key`: khoá là tham số biên dịch nên xoay khoá = dựng instance mới,
-////    mà instance cũ trước đây không đóng lại được.
+////    ⟹ ADA giữ chỗ vào một chiều, nằm lại vĩnh viễn. Thêm `Close` — tắt kho VĨNH VIỄN,
+////    không phải đường xoay khoá (mục 9).
 ////
 //// 5. Mọi phép so về NƠI ĐẾN chỉ chạm `payment_credential`, tức phần uỷ quyền của địa
 ////    chỉ là một trường TỰ DO. `Address` có hai phần: cùng băm script mà khác phần uỷ
@@ -79,6 +78,14 @@
 ////    phải bằng cận trên khoảng hiệu lực của giao dịch `Skim`, và khoảng đó không rộng
 ////    quá `listing_window_ms` ⟹ mốc mở phiên nằm trong `[bây giờ, bây giờ + cửa sổ]`:
 ////    không lùi ngày để mua rẻ ngay, không đẩy xa để đóng băng giá ở trần.
+////
+//// 9. Khoá vận hành chuyển từ tham số biên dịch vào datum (`VaultDatum.operator_key`), thêm
+////    `Rotate`. Trước đây xoay khoá = `Close` rồi mở instance mới, mà `Close` đốt NFT sổ —
+////    `fee_inbox` bake băm kho cũ và đòi NFT của nó, nên mọi ô CARP còn trong hộp thư mất
+////    đường vào sổ vĩnh viễn. `Rotate` đổi khoá tại chỗ: cùng địa chỉ, NFT, giá trị, sổ;
+////    khoá hiện tại VÀ khoá mới cùng ký. `Collect`/`Skim`/`Operate` ép khoá giữ nguyên.
+////    `Close` vẫn bỏ rơi hộp thư nếu còn ô CARP — hợp đồng không thấy UTxO ngoài giao dịch
+////    nên không chặn được; `06_close_vault.mjs` chặn ở ngoài chuỗi.
 //// ─────────────────────────────────────────────────────────────────────────────
 
 use aiken/collection/dict
@@ -100,8 +107,8 @@ use orilife/fixtures.{
 }
 use orilife/math.{ceil_div}
 use orilife/types.{
-  Burn, Close, Collect, EscrowDatum, Open, Operate, Skim, VaultDatum, VaultMint,
-  VaultRedeemer, vault_nft_name,
+  Burn, Close, Collect, EscrowDatum, Open, Operate, Rotate, Skim, VaultDatum,
+  VaultMint, VaultRedeemer, vault_nft_name,
 }
 
 /// Điểm cơ bản: 10000 = 100%.
@@ -114,8 +121,6 @@ validator fee_vault(
   skim_bps: Int,
   /// Băm hợp đồng kho tạm. Phần trích chỉ được đi về đúng một địa chỉ này.
   escrow_hash: ByteArray,
-  /// Khoá vận hành OriLife. Cần cho `Operate` và `Close`; nộp phí thì ai cũng nộp được.
-  operator_key: ByteArray,
   /// Độ rộng tối đa (ms) khoảng hiệu lực của giao dịch `Skim`. Cận trên khoảng đó thành
   /// mốc mở phiên đấu giá ở kho tạm, nên cửa sổ này là trần của việc đẩy mốc ra xa
   /// (đóng băng giá ở trần). Cận dưới thì sổ cái tự chặn: không vượt được thời điểm thật.
@@ -142,7 +147,9 @@ validator fee_vault(
           )
         is {
           [opened] -> {
-            let empty_ledger: Data = VaultDatum { collected: 0, skimmed: 0 }
+            expect InlineDatum(raw_opened) = opened.datum
+            expect VaultDatum { collected, skimmed, operator_key }: VaultDatum =
+              raw_opened
             and {
               // Tham số hỏng thì kho mở ra là kho chết: mọi nhánh spend đòi `skim_bps`
               // hợp lệ (kể cả `Close`), `Skim` đòi cửa sổ dương — ADA giữ chỗ sẽ nằm lại
@@ -155,7 +162,13 @@ validator fee_vault(
               minted == [Pair(vault_nft_name, 1)],
               opened.address == from_script(policy_id),
               holds_vault_nft(opened, policy_id),
-              opened.datum == InlineDatum(empty_ledger),
+              // Sổ trắng: bắt đầu từ 0/0 thì mọi con số về sau truy được về một dòng vào thật.
+              collected == 0,
+              skimmed == 0,
+              // Khoá vận hành ghi vào sổ phải ký ngay lần mở. Ghi nhầm một băm không ai cầm
+              // khoá là mất vĩnh viễn `Operate`, `Rotate`, `Close` — ADA giữ chỗ và phần vận
+              // hành nằm lại mãi. Chữ ký là bằng chứng có người cầm khoá đó.
+              list.has(tx.extra_signatories, operator_key),
               opened.reference_script == None,
               // Mở kho kèm CARP là nạp không ghi sổ: số CARP đó không bao giờ sinh nghĩa vụ.
               quantity_of(opened.value, carp_policy, carp_name) == 0,
@@ -219,7 +232,10 @@ validator fee_vault(
       // Ô sổ luôn có datum đúng — `Open` và mọi nhánh tiếp-tục đều ép thế — nên ở đây
       // datum hỏng là sổ hỏng, không phải UTxO lạc.
       expect Some(raw_ledger) = datum
-      expect VaultDatum { collected, skimmed }: VaultDatum = raw_ledger
+      // `operator_key` đọc từ datum ĐẦU VÀO: khoá có hiệu lực là khoá đang ghi trong sổ, không
+      // phải khoá mà ô đi ra sắp ghi.
+      expect VaultDatum { collected, skimmed, operator_key }: VaultDatum =
+        raw_ledger
 
       let base_ok = and {
           // Đúng MỘT ô sổ vào. Kho phí là một ô sổ duy nhất; cho phép nhiều ô là mở đường
@@ -249,8 +265,11 @@ validator fee_vault(
         _ -> {
           expect [continuing] = own_outputs
           expect InlineDatum(raw_next) = continuing.datum
-          expect VaultDatum { collected: next_collected, skimmed: next_skimmed }: VaultDatum =
-            raw_next
+          expect VaultDatum {
+            collected: next_collected,
+            skimmed: next_skimmed,
+            operator_key: next_operator_key,
+          }: VaultDatum = raw_next
 
           let carp_before =
             quantity_of(own_input.output.value, carp_policy, carp_name)
@@ -309,6 +328,9 @@ validator fee_vault(
                   ) - carp_before,
                   next_collected == collected + amount,
                   next_skimmed == skimmed,
+                  // `Collect` không đòi chữ ký ai, nên để trống trường này là trao khoá vận
+                  // hành cho bất kỳ ai cầm một chút CARP.
+                  next_operator_key == operator_key,
                 }
 
               // Trích phần nghĩa vụ sang kho tạm.
@@ -320,6 +342,8 @@ validator fee_vault(
                   carp_before - carp_after == amount,
                   next_collected == collected,
                   next_skimmed == skimmed + amount,
+                  // `Skim` cũng không đòi chữ ký ai — cùng lý do với `Collect`.
+                  next_operator_key == operator_key,
                   // Không được trích quá phần nghĩa vụ. Trích thừa là lấy tiền vận hành
                   // đem nộp, và nó biến một bất biến thành một quyết định tuỳ hứng.
                   next_skimmed <= ceil_div(collected * skim_bps, bps_scale),
@@ -342,12 +366,34 @@ validator fee_vault(
                   stray_carp == 0,
                   next_collected == collected,
                   next_skimmed == skimmed,
+                  // Đổi khoá chỉ qua `Rotate`, nơi khoá MỚI cũng phải ký. Để `Operate` đổi
+                  // được là cho phép ghi một khoá không ai cầm — khoá vận hành tự khoá mình.
+                  next_operator_key == operator_key,
                   // Chỉ được RÚT ra, không được nạp vào. Nạp qua đây là nạp không ghi sổ:
                   // `collected` đứng yên nên phần CARP đó không bao giờ sinh nghĩa vụ.
                   // Muốn nạp thì gọi `Collect`.
                   carp_after <= carp_before,
                   // Phần còn lại phải phủ được nghĩa vụ còn nợ.
                   carp_after >= owed,
+                }
+
+              // Xoay khoá vận hành tại chỗ: cùng địa chỉ (`shape_ok`), cùng NFT, cùng giá
+              // trị, cùng sổ — chỉ khoá đổi. Đây là đường thay cho "Close rồi mở instance
+              // mới", vì `Close` đốt NFT và bỏ rơi mọi ô CARP còn ở hộp thư.
+              Rotate -> and {
+                  // Khoá HIỆN TẠI — đọc từ datum đầu vào. Khoá cũ sau một lần xoay không
+                  // còn nằm ở đâu để được đọc.
+                  list.has(tx.extra_signatories, operator_key),
+                  // Khoá MỚI cũng ký: chứng minh có người cầm nó. Ghi nhầm một băm là mất
+                  // vĩnh viễn `Operate`/`Rotate`/`Close`.
+                  list.has(tx.extra_signatories, next_operator_key),
+                  // CARP lạc chưa vào sổ thì chỉ có lối ra là `Collect`.
+                  stray_carp == 0,
+                  next_collected == collected,
+                  next_skimmed == skimmed,
+                  // Giá trị y nguyên — CARP, ADA, NFT, token khác. `shape_ok` chỉ chặn ADA
+                  // giảm và NFT mất; ở đây không có lý do gì để giá trị đổi.
+                  continuing.value == own_input.output.value,
                 }
 
               // Không tới được: `Close` đã bắt ở nhánh trên. Có mặt để phép khớp đủ nhánh.
@@ -494,7 +540,6 @@ fn spend_with(
     carp_name,
     skim_bps,
     escrow_hash,
-    operator_key,
     window,
     seed_ref,
     datum,
@@ -588,8 +633,8 @@ fn rehomed_skim_output(carp: Int) -> Output {
 
 /// Nộp phí: `collected` tăng đúng bằng lượng CARP thật sự chảy vào.
 test collect_records_the_exact_inflow() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 500, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 500, skimmed: 0, operator_key }
   run(
     before,
     Collect { amount: 500 },
@@ -605,8 +650,8 @@ test collect_records_the_exact_inflow() {
 /// Khai nhiều hơn số thật vào: giao dịch hỏng. Đây là chỗ khiến `Collect` không cần
 /// chữ ký của ai — khai gian không mang lại gì.
 test collect_rejects_an_overstated_amount() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 900, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 900, skimmed: 0, operator_key }
   !run(
     before,
     Collect { amount: 900 },
@@ -622,8 +667,8 @@ test collect_rejects_an_overstated_amount() {
 /// Khai ít hơn số thật vào cũng hỏng. Nếu cho qua thì kẻ nộp có thể "tặng" CARP mà
 /// không làm tăng nghĩa vụ — nghe như thiệt cho họ, nhưng nó phá sổ.
 test collect_rejects_an_understated_amount() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 100, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 100, skimmed: 0, operator_key }
   !run(
     before,
     Collect { amount: 100 },
@@ -638,8 +683,8 @@ test collect_rejects_an_understated_amount() {
 
 /// Trích đúng nghĩa vụ: thu 1000, nghĩa vụ 10% là 100.
 test skim_moves_exactly_the_obligation() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   run(
     before,
     Skim { amount: 100 },
@@ -655,8 +700,8 @@ test skim_moves_exactly_the_obligation() {
 /// Trích quá nghĩa vụ bị chặn. Trích thừa là lấy tiền vận hành đem nộp — nghe có vẻ
 /// hào phóng, nhưng nó biến một bất biến thành một quyết định tuỳ hứng.
 test skim_beyond_the_obligation_is_rejected() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 101 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 101, operator_key }
   !run(
     before,
     Skim { amount: 101 },
@@ -671,8 +716,8 @@ test skim_beyond_the_obligation_is_rejected() {
 
 /// Phần trích phải đi về ĐÚNG kho tạm. Gửi vào ví riêng thì hỏng.
 test skim_must_land_at_the_escrow_script() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -688,8 +733,8 @@ test skim_must_land_at_the_escrow_script() {
 /// Kho tạm phải khai đúng số nó nhận. Khai lệch thì lần sau nó rời kho tạm với một
 /// nghĩa vụ nhỏ hơn thực tế.
 test skim_escrow_datum_must_match_the_value() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -716,8 +761,8 @@ test skim_escrow_datum_must_match_the_value() {
 /// mình là input duy nhất, và cùng chấp nhận một output ở kho tạm. Hai lần `skimmed`
 /// tăng, một lần CARP rời kho.
 test skim_output_must_name_this_vault() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -747,8 +792,8 @@ test skim_output_must_name_this_vault() {
 /// Khoản trích phải khai mình là khoản MỚI. Khai `parent = Some(...)` là tự nhận mình
 /// là phần dư của một ô kho tạm — đúng cái làm phép đo `giữ − trả_lại` bên kho tạm sai.
 test skim_output_must_be_a_fresh_deposit() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -771,7 +816,7 @@ test skim_output_must_be_a_fresh_deposit() {
 /// Tiêu vận hành phần TRÊN mức nghĩa vụ: được. Thu 1000, nợ 100, giữ lại 100 thì
 /// tiêu được 900.
 test operate_may_spend_above_the_reserve() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   run(
     state,
     Operate,
@@ -787,7 +832,7 @@ test operate_may_spend_above_the_reserve() {
 /// Đây là bài kiểm chịu lực của cả hợp đồng: chạm vào phần nghĩa vụ thì hỏng, kể cả
 /// khi chỉ thiếu MỘT đơn vị.
 test operate_cannot_touch_the_reserve() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
     Operate,
@@ -803,7 +848,7 @@ test operate_cannot_touch_the_reserve() {
 /// `Operate` KHÔNG phải cửa nạp. Bơm CARP vào kho qua đây thì `collected` đứng yên, nên
 /// phần CARP đó không bao giờ sinh nghĩa vụ — nạp thì phải gọi `Collect`.
 test operate_cannot_add_carp_without_recording_it() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
     Operate,
@@ -818,7 +863,7 @@ test operate_cannot_add_carp_without_recording_it() {
 
 /// Người lạ không tiêu được kho, kể cả khi giữ đủ phần nghĩa vụ.
 test operate_needs_the_operator_signature() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
     Operate,
@@ -834,8 +879,8 @@ test operate_needs_the_operator_signature() {
 /// Tiêu vận hành không được sửa sổ. Hạ `collected` xuống là hạ nghĩa vụ xuống theo —
 /// đường tấn công gọn nhất vào cả cơ chế, nên nó có bài kiểm riêng.
 test operate_cannot_rewrite_the_ledger() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
-  let forged = VaultDatum { collected: 0, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let forged = VaultDatum { collected: 0, skimmed: 0, operator_key }
   !run(
     state,
     Operate,
@@ -855,7 +900,7 @@ test operate_cannot_rewrite_the_ledger() {
 /// khoá là tham số biên dịch, xoay khoá là dựng instance mới, mà instance cũ trước đây
 /// không đóng lại được.
 test close_frees_the_reserved_ada_once_the_obligation_is_settled() {
-  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  let settled = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   run(
     settled,
     Close,
@@ -871,7 +916,7 @@ test close_frees_the_reserved_ada_once_the_obligation_is_settled() {
 /// Còn nợ một đơn vị thì không đóng được. Không có câu này thì `Close` là cửa thoát
 /// cho toàn bộ cơ chế.
 test close_requires_the_obligation_to_be_settled() {
-  let owing = VaultDatum { collected: 1_000, skimmed: 99 }
+  let owing = VaultDatum { collected: 1_000, skimmed: 99, operator_key }
   !run(
     owing,
     Close,
@@ -886,7 +931,7 @@ test close_requires_the_obligation_to_be_settled() {
 
 /// Người lạ không đóng được kho, kể cả khi nghĩa vụ đã trả hết.
 test close_needs_the_operator_signature() {
-  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  let settled = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     settled,
     Close,
@@ -902,8 +947,8 @@ test close_needs_the_operator_signature() {
 /// "Đóng" mà vẫn để lại một ô kho thì không phải đóng. Cho qua là mở đường dựng một ô
 /// kho mới với sổ bịa ra.
 test close_rejects_a_continuing_vault_output() {
-  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
-  let forged = VaultDatum { collected: 0, skimmed: 0 }
+  let settled = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
+  let forged = VaultDatum { collected: 0, skimmed: 0, operator_key }
   !run(
     settled,
     Close,
@@ -921,8 +966,8 @@ test close_rejects_a_continuing_vault_output() {
 ///
 /// Thu 1005 với 10%: nghĩa vụ đúng là 100,5 ⟹ phải trích 101, không phải 100.
 test the_obligation_rounds_up_and_stays_reachable() {
-  let before = VaultDatum { collected: 1_005, skimmed: 0 }
-  let after = VaultDatum { collected: 1_005, skimmed: 101 }
+  let before = VaultDatum { collected: 1_005, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_005, skimmed: 101, operator_key }
   run(
     before,
     Skim { amount: 101 },
@@ -938,7 +983,7 @@ test the_obligation_rounds_up_and_stays_reachable() {
 /// Và sau khi trích đủ 101 thì kho đóng được — đó là vế thứ hai của bài trên, tách ra
 /// vì nó kiểm một hợp đồng khác: `Close` đòi `ceil(collected × bps) == skimmed`.
 test rounding_up_still_lets_the_vault_close() {
-  let settled = VaultDatum { collected: 1_005, skimmed: 101 }
+  let settled = VaultDatum { collected: 1_005, skimmed: 101, operator_key }
   run(
     settled,
     Close,
@@ -964,8 +1009,8 @@ test rounding_up_still_lets_the_vault_close() {
 ///
 /// Giống hệt bài âm ngay dưới, khác đúng phần uỷ quyền của địa chỉ đầu ra.
 test collect_passes_when_the_vault_stays_at_its_exact_address() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 500, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 500, skimmed: 0, operator_key }
   run(
     before,
     Collect { amount: 500 },
@@ -986,8 +1031,8 @@ test collect_passes_when_the_vault_stays_at_its_exact_address() {
 /// kịch bản trong `onchain/scripts/` tìm ô kho — mất dấu nó, và phần thưởng uỷ quyền
 /// trên toàn bộ ADA giữ chỗ chảy về khoá của kẻ dựng giao dịch, lặp mỗi epoch.
 test collect_cannot_rehome_the_vault_to_another_stake_credential() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 500, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 500, skimmed: 0, operator_key }
   !run(
     before,
     Collect { amount: 500 },
@@ -1003,8 +1048,8 @@ test collect_cannot_rehome_the_vault_to_another_stake_credential() {
 /// CỰC ÂM. Cùng hình dạng với bài dương `collect_passes_when_the_vault_stays_at_its_exact_address`,
 /// khác đúng một thứ: ô kho đi ra mang một reference script do kẻ dựng giao dịch đính vào.
 test collect_cannot_attach_a_reference_script_to_the_vault() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 500, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 500, skimmed: 0, operator_key }
   let loaded =
     Output {
       ..vault_utxo(2_000_000, 500, after),
@@ -1028,7 +1073,7 @@ test collect_cannot_attach_a_reference_script_to_the_vault() {
 /// `shape_ok` như mọi nhánh tiếp-tục khác. Bài dương của cặp này là
 /// `operate_may_spend_above_the_reserve`.
 test operate_cannot_rehome_the_vault() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
     Operate,
@@ -1044,8 +1089,8 @@ test operate_cannot_rehome_the_vault() {
 /// CỰC ÂM. Nhánh `Skim` cũng vậy. Bài dương của cặp là `skim_moves_exactly_the_obligation`
 /// — khác đúng phần uỷ quyền của ô kho đi ra.
 test skim_cannot_rehome_the_vault() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -1066,8 +1111,8 @@ test skim_cannot_rehome_the_vault() {
 /// trích đậu lệch địa chỉ là một khoản `skimmed` đã ghi vào sổ mà đường nộp kho bạc
 /// không với tới — nghĩa vụ coi như đã trả trong sổ, chưa trả trên thực tế.
 test skim_cannot_send_the_obligation_to_a_rehomed_escrow() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -1088,8 +1133,8 @@ test skim_cannot_send_the_obligation_to_a_rehomed_escrow() {
 /// đếm nữa, và `Close` trở thành đường dựng một ô kho mới với sổ bịa ra. Cặp của bài này
 /// là `close_rejects_a_continuing_vault_output`.
 test close_rejects_a_rehomed_continuing_vault_output() {
-  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
-  let forged = VaultDatum { collected: 0, skimmed: 0 }
+  let settled = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
+  let forged = VaultDatum { collected: 0, skimmed: 0, operator_key }
   !run(
     settled,
     Close,
@@ -1124,7 +1169,6 @@ fn mint_with(
     carp_name,
     bps,
     escrow_hash,
-    operator_key,
     window,
     seed_ref,
     redeemer,
@@ -1171,7 +1215,7 @@ fn wallet_input(reference: OutputReference) -> Input {
 }
 
 fn empty_ledger() -> VaultDatum {
-  VaultDatum { collected: 0, skimmed: 0 }
+  VaultDatum { collected: 0, skimmed: 0, operator_key }
 }
 
 fn opening_output() -> Output {
@@ -1182,12 +1226,74 @@ fn opening_output() -> Output {
   )
 }
 
+/// Giao dịch mở kho, khoá vận hành ghi trong sổ trắng (`operator_key`) ký.
 fn open_tx(
   inputs: List<Input>,
   outputs: List<Output>,
   minted: Value,
 ) -> Transaction {
-  Transaction { ..tx(inputs, outputs, [], None), mint: minted }
+  open_tx_signed(inputs, outputs, minted, [operator_key])
+}
+
+fn open_tx_signed(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  minted: Value,
+  signatories: List<ByteArray>,
+) -> Transaction {
+  Transaction { ..tx(inputs, outputs, signatories, None), mint: minted }
+}
+
+/// Khoá ghi trong sổ trắng không ký: có thể là một băm không ai cầm khoá, và kho mở ra như
+/// thế thì `Operate`/`Rotate`/`Close` chết từ lần đầu.
+test open_requires_the_signature_of_the_operator_key_in_the_ledger() {
+  !run_mint(
+    Open,
+    open_tx_signed(
+      [wallet_input(seed_ref)],
+      [opening_output()],
+      one_nft(),
+      [stranger_key],
+    ),
+  )
+}
+
+/// Người ký là khoá khác với khoá ghi trong sổ: cũng bị bác — chữ ký phải của ĐÚNG khoá đó.
+test open_rejects_a_ledger_naming_a_key_that_did_not_sign() {
+  !run_mint(
+    Open,
+    open_tx(
+      [wallet_input(seed_ref)],
+      [
+        script_output(
+          vault_hash,
+          with_vault_nft(from_lovelace(2_000_000)),
+          inline(
+            VaultDatum { collected: 0, skimmed: 0, operator_key: stranger_key },
+          ),
+        ),
+      ],
+      one_nft(),
+    ),
+  )
+}
+
+/// `skimmed` khác 0 cũng là sổ bịa — cặp với bài `collected` bên dưới.
+test open_rejects_a_ledger_with_a_non_zero_skimmed() {
+  !run_mint(
+    Open,
+    open_tx(
+      [wallet_input(seed_ref)],
+      [
+        script_output(
+          vault_hash,
+          with_vault_nft(from_lovelace(2_000_000)),
+          inline(VaultDatum { collected: 0, skimmed: 1, operator_key }),
+        ),
+      ],
+      one_nft(),
+    ),
+  )
 }
 
 fn one_nft() -> Value {
@@ -1329,7 +1435,7 @@ test open_rejects_a_ledger_that_does_not_start_empty() {
         script_output(
           vault_hash,
           with_vault_nft(from_lovelace(2_000_000)),
-          inline(VaultDatum { collected: 500, skimmed: 0 }),
+          inline(VaultDatum { collected: 500, skimmed: 0, operator_key }),
         ),
       ],
       one_nft(),
@@ -1386,8 +1492,8 @@ test burn_cannot_mint() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test collect_rejects_a_continuing_output_without_the_nft() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 500, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 500, skimmed: 0, operator_key }
   !run(
     before,
     Collect { amount: 500 },
@@ -1401,8 +1507,8 @@ test collect_rejects_a_continuing_output_without_the_nft() {
 }
 
 test skim_rejects_a_continuing_output_without_the_nft() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -1420,7 +1526,7 @@ test skim_rejects_a_continuing_output_without_the_nft() {
 }
 
 test operate_rejects_a_continuing_output_without_the_nft() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
     Operate,
@@ -1441,7 +1547,7 @@ test operate_rejects_a_continuing_output_without_the_nft() {
 
 /// Đóng kho mà không đốt: NFT ra ví vận hành, còn sống để gắn vào một sổ bịa.
 test close_requires_the_burn() {
-  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  let settled = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     settled,
     Close,
@@ -1462,7 +1568,7 @@ test close_requires_the_burn() {
 /// Một UTxO ở địa chỉ kho mang datum đúng khuôn sổ — sổ "trắng", nên nghĩa vụ bằng 0 và
 /// `Operate` sẽ cho rút hết — nhưng KHÔNG giữ NFT. Nó không được đóng vai sổ.
 test a_fake_vault_utxo_with_a_forged_datum_but_no_nft_cannot_act_as_the_ledger() {
-  let forged = VaultDatum { collected: 0, skimmed: 0 }
+  let forged = VaultDatum { collected: 0, skimmed: 0, operator_key }
   let raw: Data = forged
   !run_at(
     ref_at(0),
@@ -1487,7 +1593,7 @@ fn stray_sweep(ledger_gain: Int, stray: Output) -> Transaction {
       vault_utxo(
         2_000_000,
         ledger_gain,
-        VaultDatum { collected: ledger_gain, skimmed: 0 },
+        VaultDatum { collected: ledger_gain, skimmed: 0, operator_key },
       ),
       stranger_with(from_lovelace(3_000_000)),
     ],
@@ -1537,7 +1643,7 @@ test a_stray_input_rejects_a_ledger_gain_below_its_carp() {
 /// CARP lạc không ra theo `Operate`. Ô sổ giữ đúng như bài dương
 /// `operate_may_spend_above_the_reserve`; khác đúng một ô lạc 100 CARP đi ra ví vận hành.
 test stray_carp_cannot_leave_via_operate() {
-  let state = VaultDatum { collected: 1_000, skimmed: 0 }
+  let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
     Operate,
@@ -1556,8 +1662,8 @@ test stray_carp_cannot_leave_via_operate() {
 /// CARP lạc không ra theo `Skim`. Ô sổ và khoản trích đúng như bài dương
 /// `skim_moves_exactly_the_obligation`; khác đúng một ô lạc 100 CARP đi ra ví lạ.
 test stray_carp_cannot_leave_via_skim() {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
     before,
     Skim { amount: 100 },
@@ -1594,7 +1700,7 @@ test a_stray_input_needs_the_ledger_input() {
 
 /// Ô lạc đi cùng một lần đóng kho thì không tiêu được: không còn ô sổ nào đi ra để ghi.
 test a_stray_input_needs_the_ledger_to_continue() {
-  let settled = VaultDatum { collected: 1_000, skimmed: 100 }
+  let settled = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run_at(
     ref_at(1),
     None,
@@ -1614,8 +1720,8 @@ test a_stray_input_needs_the_ledger_to_continue() {
 /// Hai đầu vào giữ NFT. Không xảy ra được trên chuỗi (tổng cung 1), nên đây là bài ghim
 /// phòng thủ cho phép đếm `ledger_inputs`: gỡ phép đếm thì bài này phải đỏ.
 test two_ledger_inputs_are_rejected() {
-  let before = VaultDatum { collected: 0, skimmed: 0 }
-  let after = VaultDatum { collected: 500, skimmed: 0 }
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 500, skimmed: 0, operator_key }
   !run(
     before,
     Collect { amount: 500 },
@@ -1644,7 +1750,13 @@ test a_stray_input_rejects_two_ledger_inputs() {
         input_from(ref_at(1), vault_utxo(2_000_000, 0, empty_ledger())),
         input_from(ref_at(2), stray_utxo(100)),
       ],
-      [vault_utxo(2_000_000, 100, VaultDatum { collected: 100, skimmed: 0 })],
+      [
+        vault_utxo(
+          2_000_000,
+          100,
+          VaultDatum { collected: 100, skimmed: 0, operator_key },
+        ),
+      ],
       [],
       None,
     ),
@@ -1664,7 +1776,11 @@ test a_stray_input_rejects_two_ledger_outputs() {
         input_from(ref_at(1), stray_utxo(100)),
       ],
       [
-        vault_utxo(2_000_000, 100, VaultDatum { collected: 100, skimmed: 0 }),
+        vault_utxo(
+          2_000_000,
+          100,
+          VaultDatum { collected: 100, skimmed: 0, operator_key },
+        ),
         vault_utxo(2_000_000, 0, empty_ledger()),
       ],
       [],
@@ -1686,7 +1802,13 @@ test collect_accepts_inbox_inputs_alongside_the_ledger() {
           script_output(inbox_hash, value_with_carp(2_000_000, 100), NoDatum),
         ),
       ],
-      [vault_utxo(2_000_000, 100, VaultDatum { collected: 100, skimmed: 0 })],
+      [
+        vault_utxo(
+          2_000_000,
+          100,
+          VaultDatum { collected: 100, skimmed: 0, operator_key },
+        ),
+      ],
       [],
       None,
     ),
@@ -1701,8 +1823,8 @@ test collect_accepts_inbox_inputs_alongside_the_ledger() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn skim_in(window: Int, range, listed_at: Int) -> Bool {
-  let before = VaultDatum { collected: 1_000, skimmed: 0 }
-  let after = VaultDatum { collected: 1_000, skimmed: 100 }
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   let raw: Data = before
   spend_with(
     window,
@@ -1807,7 +1929,7 @@ fn sweep_of(n: Int) -> Transaction {
       vault_utxo(
         2_000_000,
         100 * n,
-        VaultDatum { collected: 100 * n, skimmed: 0 },
+        VaultDatum { collected: 100 * n, skimmed: 0, operator_key },
       ),
     ],
     [],
@@ -1856,7 +1978,11 @@ fn two_inbox_sweep(gain: Int) -> Transaction {
     ..tx(
       list.indexed_map(inputs, fn(i, o) { input_from(ref_at(i), o) }),
       [
-        vault_utxo(2_000_000, gain, VaultDatum { collected: gain, skimmed: 0 }),
+        vault_utxo(
+          2_000_000,
+          gain,
+          VaultDatum { collected: gain, skimmed: 0, operator_key },
+        ),
         stranger_with(value_with_carp(4_000_000, 200 - gain)),
       ],
       [],
@@ -1893,7 +2019,11 @@ fn foreign_sweep(gain: Int) -> Transaction {
   tx(
     list.indexed_map(inputs, fn(i, o) { input_from(ref_at(i), o) }),
     [
-      vault_utxo(2_000_000, gain, VaultDatum { collected: gain, skimmed: 0 }),
+      vault_utxo(
+        2_000_000,
+        gain,
+        VaultDatum { collected: gain, skimmed: 0, operator_key },
+      ),
       stranger_with(value_with_carp(4_000_000, 150 - gain)),
     ],
     [],
@@ -1927,10 +2057,371 @@ test r11d_wallet_inputs_are_not_counted() {
         ),
       ],
       [
-        vault_utxo(2_000_000, 30, VaultDatum { collected: 30, skimmed: 0 }),
+        vault_utxo(
+          2_000_000,
+          30,
+          VaultDatum { collected: 30, skimmed: 0, operator_key },
+        ),
         stranger_with(value_with_carp(2_000_000, 70)),
       ],
       [],
+      None,
+    ),
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Xoay khoá vận hành (`Rotate`). Khoá nằm trong datum; `Rotate` đổi đúng một trường đó,
+// mọi thứ khác của ô sổ giữ nguyên. Mỗi bài âm dưới đây đổi ĐÚNG MỘT thứ so với bài dương.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Khoá mới sau khi xoay. Khác cả `operator_key` lẫn `stranger_key`.
+const rotated_key: ByteArray =
+  #"77777777777777777777777777777777777777777777777777777777"
+
+/// Sổ đang dở: đã thu, đã trích một phần — để bài nào đổi `collected`/`skimmed` cũng thấy.
+fn rotating_ledger() -> VaultDatum {
+  VaultDatum { collected: 1_000, skimmed: 60, operator_key }
+}
+
+fn with_key(d: VaultDatum, key: ByteArray) -> VaultDatum {
+  VaultDatum { ..d, operator_key: key }
+}
+
+/// Tiêu ô sổ `rotating_ledger` (2 ADA + 900 CARP) bằng `Rotate`, với một ô đi ra và một bộ
+/// chữ ký tuỳ bài.
+fn rotate_with(output: Output, signatories: List<ByteArray>) -> Bool {
+  run(
+    rotating_ledger(),
+    Rotate,
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 900, rotating_ledger()))],
+      [output],
+      signatories,
+      None,
+    ),
+  )
+}
+
+fn both_keys() -> List<ByteArray> {
+  [operator_key, rotated_key]
+}
+
+/// CỰC DƯƠNG. Cùng địa chỉ, cùng NFT, cùng giá trị, cùng sổ — chỉ khoá đổi; hai khoá ký.
+test rotate_changes_only_the_operator_key() {
+  rotate_with(
+    vault_utxo(2_000_000, 900, with_key(rotating_ledger(), rotated_key)),
+    both_keys(),
+  )
+}
+
+/// Thiếu chữ ký khoá HIỆN TẠI: khoá mới tự ký cho mình thì ai cũng chiếm được kho.
+test rotate_needs_the_current_key_signature() {
+  !rotate_with(
+    vault_utxo(2_000_000, 900, with_key(rotating_ledger(), rotated_key)),
+    [rotated_key],
+  )
+}
+
+/// Người lạ ký thay khoá hiện tại: cũng bị bác.
+test rotate_rejects_a_stranger_in_place_of_the_current_key() {
+  !rotate_with(
+    vault_utxo(2_000_000, 900, with_key(rotating_ledger(), rotated_key)),
+    [stranger_key, rotated_key],
+  )
+}
+
+/// Thiếu chữ ký khoá MỚI: có thể là một băm không ai cầm khoá — xoay xong là mất vĩnh viễn
+/// `Operate`/`Rotate`/`Close`.
+test rotate_needs_the_new_key_signature() {
+  !rotate_with(
+    vault_utxo(2_000_000, 900, with_key(rotating_ledger(), rotated_key)),
+    [operator_key],
+  )
+}
+
+/// Rút CARP ra trong lúc xoay khoá.
+test rotate_cannot_take_carp() {
+  !rotate_with(
+    vault_utxo(2_000_000, 899, with_key(rotating_ledger(), rotated_key)),
+    both_keys(),
+  )
+}
+
+/// Nạp CARP vào trong lúc xoay khoá: nạp không ghi sổ, phần đó không sinh nghĩa vụ.
+test rotate_cannot_add_carp() {
+  !rotate_with(
+    vault_utxo(2_000_000, 901, with_key(rotating_ledger(), rotated_key)),
+    both_keys(),
+  )
+}
+
+/// Thêm ADA: `shape_ok` cho qua (chỉ chặn ADA giảm), chỉ phép so giá trị y nguyên chặn.
+test rotate_cannot_change_the_lovelace() {
+  !rotate_with(
+    vault_utxo(2_000_001, 900, with_key(rotating_ledger(), rotated_key)),
+    both_keys(),
+  )
+}
+
+/// Đính thêm một token lạ vào ô sổ.
+test rotate_cannot_add_a_foreign_token() {
+  !rotate_with(
+    script_output(
+      vault_hash,
+      add(
+        with_vault_nft(value_with_carp(2_000_000, 900)),
+        stranger_key,
+        "junk",
+        1,
+      ),
+      inline(with_key(rotating_ledger(), rotated_key)),
+    ),
+    both_keys(),
+  )
+}
+
+/// NFT rời ô sổ.
+test rotate_cannot_drop_the_nft() {
+  !rotate_with(
+    script_output(
+      vault_hash,
+      value_with_carp(2_000_000, 900),
+      inline(with_key(rotating_ledger(), rotated_key)),
+    ),
+    both_keys(),
+  )
+}
+
+/// `collected` đổi lên: nghĩa vụ phình theo một dòng vào chưa từng có. `owed >= 0` vẫn đạt.
+test rotate_cannot_change_collected() {
+  !rotate_with(
+    vault_utxo(
+      2_000_000,
+      900,
+      VaultDatum { collected: 2_000, skimmed: 60, operator_key: rotated_key },
+    ),
+    both_keys(),
+  )
+}
+
+/// `skimmed` đổi xuống: nghĩa vụ đã trích bị viết lại. `owed >= 0` vẫn đạt.
+test rotate_cannot_change_skimmed() {
+  !rotate_with(
+    vault_utxo(
+      2_000_000,
+      900,
+      VaultDatum { collected: 1_000, skimmed: 50, operator_key: rotated_key },
+    ),
+    both_keys(),
+  )
+}
+
+/// Dời ô sổ sang một địa chỉ khác cùng băm script trong lúc xoay khoá.
+test rotate_cannot_rehome_the_vault() {
+  !rotate_with(
+    rehomed_vault_utxo(2_000_000, 900, with_key(rotating_ledger(), rotated_key)),
+    both_keys(),
+  )
+}
+
+/// Ô lạc có CARP đi kèm `Rotate`: CARP chưa vào sổ chỉ có lối ra là `Collect`.
+test rotate_rejects_stray_carp() {
+  !run(
+    rotating_ledger(),
+    Rotate,
+    tx(
+      [
+        input_from(ref_at(0), vault_utxo(2_000_000, 900, rotating_ledger())),
+        input_from(ref_at(1), stray_utxo(50)),
+      ],
+      [
+        vault_utxo(2_000_000, 900, with_key(rotating_ledger(), rotated_key)),
+        to(stranger_key, 50),
+      ],
+      both_keys(),
+      None,
+    ),
+  )
+}
+
+/// Sổ SAU khi xoay: khoá trong datum là `rotated_key`.
+fn rotated_ledger() -> VaultDatum {
+  with_key(rotating_ledger(), rotated_key)
+}
+
+/// Khoá MỚI dùng được `Operate` ngay sau khi xoay.
+test operate_with_the_new_key_after_rotate() {
+  run(
+    rotated_ledger(),
+    Operate,
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 900, rotated_ledger()))],
+      [vault_utxo(2_000_000, 100, rotated_ledger()), to(rotated_key, 800)],
+      [rotated_key],
+      None,
+    ),
+  )
+}
+
+/// Khoá CŨ sau khi xoay: `Operate` bị bác.
+test operate_with_the_old_key_after_rotate_is_rejected() {
+  !run(
+    rotated_ledger(),
+    Operate,
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 900, rotated_ledger()))],
+      [vault_utxo(2_000_000, 100, rotated_ledger()), to(operator_key, 800)],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// Sổ đã trả hết nghĩa vụ, khoá đã xoay — để thử `Close`.
+fn settled_rotated_ledger() -> VaultDatum {
+  VaultDatum { collected: 1_000, skimmed: 100, operator_key: rotated_key }
+}
+
+/// Khoá MỚI đóng được kho.
+test close_with_the_new_key_after_rotate() {
+  run(
+    settled_rotated_ledger(),
+    Close,
+    close_tx(
+      [
+        input_from(
+          ref_at(0),
+          vault_utxo(5_000_000, 900, settled_rotated_ledger()),
+        ),
+      ],
+      [to(rotated_key, 900)],
+      [rotated_key],
+      None,
+    ),
+  )
+}
+
+/// Khoá CŨ sau khi xoay: `Close` bị bác.
+test close_with_the_old_key_after_rotate_is_rejected() {
+  !run(
+    settled_rotated_ledger(),
+    Close,
+    close_tx(
+      [
+        input_from(
+          ref_at(0),
+          vault_utxo(5_000_000, 900, settled_rotated_ledger()),
+        ),
+      ],
+      [to(operator_key, 900)],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// Khoá CŨ sau khi xoay tự xoay ngược về mình (dù tự ký cả hai vai): bị bác — nó không còn
+/// là khoá hiện tại.
+test rotate_back_with_only_the_old_key_is_rejected() {
+  !run(
+    rotated_ledger(),
+    Rotate,
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 900, rotated_ledger()))],
+      [vault_utxo(2_000_000, 900, rotating_ledger())],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// `Collect` không đòi chữ ký ai — nên nó không được đổi khoá, kể cả khi sổ ghi đúng.
+test collect_cannot_change_the_operator_key() {
+  let before = rotating_ledger()
+  !run(
+    before,
+    Collect { amount: 500 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 900, before))],
+      [
+        vault_utxo(
+          2_000_000,
+          1_400,
+          VaultDatum {
+            collected: 1_500,
+            skimmed: 60,
+            operator_key: stranger_key,
+          },
+        ),
+      ],
+      [stranger_key],
+      None,
+    ),
+  )
+}
+
+/// Cặp dương của bài trên: cùng giao dịch, khoá giữ nguyên.
+test collect_keeps_the_operator_key() {
+  let before = rotating_ledger()
+  run(
+    before,
+    Collect { amount: 500 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 900, before))],
+      [
+        vault_utxo(
+          2_000_000,
+          1_400,
+          VaultDatum { collected: 1_500, skimmed: 60, operator_key },
+        ),
+      ],
+      [stranger_key],
+      None,
+    ),
+  )
+}
+
+/// `Skim` cũng không đòi chữ ký ai — không được đổi khoá.
+test skim_cannot_change_the_operator_key() {
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  !run(
+    before,
+    Skim { amount: 100 },
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 1_000, before))],
+      [
+        vault_utxo(
+          2_000_000,
+          900,
+          VaultDatum {
+            collected: 1_000,
+            skimmed: 100,
+            operator_key: stranger_key,
+          },
+        ),
+        skim_output(100),
+      ],
+      [stranger_key],
+      None,
+    ),
+  )
+}
+
+/// `Operate` có chữ ký khoá hiện tại nhưng vẫn không được đổi khoá: đường đổi khoá là
+/// `Rotate`, nơi khoá mới cũng phải ký.
+test operate_cannot_change_the_operator_key() {
+  let state = rotating_ledger()
+  !run(
+    state,
+    Operate,
+    tx(
+      [input_from(ref_at(0), vault_utxo(2_000_000, 900, state))],
+      [
+        vault_utxo(2_000_000, 100, with_key(state, rotated_key)),
+        to(operator_key, 800),
+      ],
+      [operator_key, rotated_key],
       None,
     ),
   )

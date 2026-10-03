@@ -39,19 +39,20 @@ if (!seedUtxo) {
   saveState({ seed });
 }
 
-const scripts = buildScripts({
-  carpPolicy: s.carpPolicy,
-  carpName: s.carpName,
-  operatorKeyHash: s.operatorKeyHash,
-  seed,
-});
+const scripts = buildScripts({ carpPolicy: s.carpPolicy, carpName: s.carpName, seed });
 
 console.log("kho tạm  ", scripts.escrowAddress);
 console.log("kho phí  ", scripts.vaultAddress);
 console.log("hộp thư  ", scripts.inboxAddress);
 console.log("NFT sổ   ", scripts.vaultNftUnit);
 
-const datum = Data.to({ collected: 0n, skimmed: 0n }, VaultDatum);
+// Khoá vận hành ban đầu = khoá của ví mở kho (`01` ghi vào `operatorKeyHash`). Nó nằm trong
+// datum, không trong tham số kho; `Open` đòi chính khoá đó ký, nên ghi nhầm một băm không ai
+// cầm khoá thì giao dịch hỏng ngay ở đây thay vì mở ra một kho không ai vận hành được.
+const datum = Data.to(
+  { collected: 0n, skimmed: 0n, operator_key: s.operatorKeyHash },
+  VaultDatum,
+);
 
 const tx = await lucid
   .newTx()
@@ -68,6 +69,7 @@ const tx = await lucid
     { kind: "inline", value: datum },
     { lovelace: 5_000_000n, [scripts.vaultNftUnit]: 1n },
   )
+  .addSignerKey(s.operatorKeyHash)
   .complete();
 
 const signed = await tx.sign.withWallet().complete();
