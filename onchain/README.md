@@ -210,6 +210,16 @@ node onchain/scripts/06_close_vault.mjs    # TẮT VĨNH VIỄN: đốt NFT, thu
 `07` không đổi băm kho, địa chỉ kho, NFT sổ hay địa chỉ hộp thư. Sau `07`, `06` phải chạy bằng
 ví của khoá MỚI (`06` đối chiếu ví với `operator_key` trong sổ và dừng nếu lệch).
 
+Hai giới hạn của bản này:
+- `connect()` trong `common.mjs` luôn chọn cùng một ví, chưa có cách chọn ví vận hành riêng. Sau
+  khi xoay sang ví khác, `06` và `07` dừng ở bước đối chiếu ví (báo lỗi, không gửi giao dịch) cho
+  tới khi ví mà `connect()` chọn là ví của khoá mới. `lifecycle_emulator.mjs` không gặp chỗ này vì
+  nó tiêm ví trực tiếp.
+- Gõ `NEW_OPERATOR_SEED='…'` ngay trên dòng lệnh thì shell ghi cụm từ vào tệp lịch sử. Gõ một dấu
+  cách ở đầu lệnh (zsh với `HIST_IGNORE_SPACE`, bash với `HISTCONTROL=ignorespace`), hoặc đọc bằng
+  `read -rs NEW_OPERATOR_SEED && export NEW_OPERATOR_SEED` trước khi chạy. Kịch bản không in và
+  không ghi cụm từ ra tệp; nó chỉ in băm khoá mới.
+
 Trạng thái đã triển khai ghi vào `scripts/deployed_preprod.json`; kịch bản đọc lại tệp đó
 nên chạy lại không đúc thêm hay mở thêm kho. Tệp đó là **nhật ký**: `02` dời instance đã
 đóng vào mảng `closed` trước khi mở instance mới, và dừng nếu instance cũ chưa đóng.
