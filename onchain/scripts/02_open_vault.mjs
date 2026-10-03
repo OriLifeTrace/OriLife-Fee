@@ -11,16 +11,36 @@ import {
 } from "./common.mjs";
 import { VaultDatum, VaultMint } from "./schemas.mjs";
 
+// Đồng CARP của instance sắp mở. Mặc định là đồng ghi ở gốc tệp trạng thái (`01` ghi tCARP
+// thử). Mở kho cho một đồng CARP có sẵn trên chuỗi thì đặt `ORILIFE_FEE_CARP_POLICY` +
+// `ORILIFE_FEE_CARP_NAME` (tên tài sản dạng hex), tuỳ chọn `ORILIFE_FEE_CARP_MINT_TX` (tx đúc
+// đầu, chỉ để ghi nhật ký). Đồng CARP là tham số của cả ba hợp đồng, nên nó được chốt TRƯỚC khi
+// chọn seed và dựng hợp đồng, và không đổi được trên một instance đang mở.
+const envCarp = process.env.ORILIFE_FEE_CARP_POLICY
+  ? {
+      carpPolicy: process.env.ORILIFE_FEE_CARP_POLICY,
+      carpName: process.env.ORILIFE_FEE_CARP_NAME ?? "",
+      carpUnit: process.env.ORILIFE_FEE_CARP_POLICY + (process.env.ORILIFE_FEE_CARP_NAME ?? ""),
+      mintTx: process.env.ORILIFE_FEE_CARP_MINT_TX,
+    }
+  : null;
+
 const current = state();
-if (!current.carpPolicy) throw new Error("chạy 01_mint_test_carp.mjs trước");
+if (!current.carpPolicy && !envCarp) {
+  throw new Error("chưa có đồng CARP: chạy 01_mint_test_carp.mjs hoặc đặt ORILIFE_FEE_CARP_POLICY");
+}
 if (current.openTx && current.vaultNftUnit && !current.closeTx) {
+  if (envCarp && envCarp.carpUnit !== current.carpUnit) {
+    throw new Error("kho đang mở dùng đồng CARP khác — đóng kho cũ (06) trước khi mở cho đồng mới");
+  }
   console.log("kho đã mở, bỏ qua");
   process.exit(0);
 }
-// Gốc tệp đang mang một instance đã mở: đã đóng thì dời vào `closed`, chưa đóng thì
-// `archiveClosedInstance` dừng. Chỉ có `seed` (lần trước chọn seed rồi hỏng ở bước gửi) thì
-// giữ nguyên để dùng lại đúng seed đó.
-const s = current.openTx ? archiveClosedInstance() : current;
+// Gốc tệp đang mang một instance đã mở: đã đóng thì dời vào `closed` (kèm đồng CARP nó dùng),
+// chưa đóng thì `archiveClosedInstance` dừng. Chỉ có `seed` (lần trước chọn seed rồi hỏng ở
+// bước gửi) thì giữ nguyên để dùng lại đúng seed đó — seed không phụ thuộc đồng CARP.
+if (current.openTx) archiveClosedInstance();
+const s = envCarp ? saveState(envCarp) : state();
 
 const lucid = await connect();
 
@@ -76,8 +96,10 @@ const signed = await tx.sign.withWallet().complete();
 const txHash = await signed.submit();
 console.log("tx       ", txHash);
 console.log("         ", explorer(txHash));
-await awaitTx(lucid, txHash, "mở kho:");
 
+// Ghi NGAY sau khi nộp, trước khi chờ xác nhận: `seed` đã nằm trong tệp, nên nếu bước chờ chết
+// mà `openTx` chưa ghi thì lần chạy lại thấy seed đã bị tiêu, chọn seed mới và mở một instance
+// THỨ HAI (đã xảy ra trên Preprod 2026-10-04: e629ec17… rồi 236ab229…).
 saveState({
   escrowAddress: scripts.escrowAddress,
   escrowHash: scripts.escrowHash,
@@ -89,3 +111,4 @@ saveState({
   inboxRewardAddress: scripts.inboxRewardAddress,
   openTx: txHash,
 });
+await awaitTx(lucid, txHash, "mở kho:");

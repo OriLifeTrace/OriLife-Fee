@@ -49,7 +49,8 @@ saveState({
   wallet: address,
   operatorKeyHash: keyHash,
   carpPolicy: policyId,
-  carpName: TEST_CARP_NAME,
+  // Tên tài sản ghi dạng hex — `buildScripts` nhận đúng bytes trên chuỗi.
+  carpName: fromText(TEST_CARP_NAME),
   carpUnit: unit,
   mintTx: txHash,
 });
