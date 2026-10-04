@@ -24,7 +24,7 @@ kho tạm giữ phần đã trích chỉ mở khoá trong một giao dịch có 
 ## Ba hợp đồng
 
 ```
-ConsumeMAGIC ──(CARP, không datum)──▶ fee_inbox ──gom (ai cũng gọi)──▶ fee_vault ──Skim──▶ donation_escrow ──Donate──▶ kho bạc Cardano
+ConsumeMAGIC ──(CARP, datum hoàn hoặc không datum)──▶ fee_inbox ──gom (ai cũng gọi)──▶ fee_vault ──Skim──▶ donation_escrow ──Donate──▶ kho bạc Cardano
 ```
 
 ### `fee_vault` — kho phí
@@ -94,8 +94,17 @@ vẫn dò danh sách đầu vào để tìm lần rút, nên tổng chi phí tă
 Mặt `publish` chỉ cho **đăng ký** credential (làm một lần lúc mở kho); huỷ đăng ký hay uỷ quyền
 đều bị từ chối.
 
-ADA giữ chỗ của các ô hộp thư không bị ràng buộc — về tay người gom. Đó là động cơ để người
-ngoài OriLife cũng gom.
+ADA giữ chỗ của ô hộp thư KHÔNG datum không bị ràng buộc — về tay người gom. Đó là động cơ để
+người ngoài OriLife cũng gom.
+
+Ô mang `InlineDatum` `InboxDatum { refund }` (`types.ak`) là ô có hoàn: min-ADA của nó do bên trả
+phí hộ ứng. Khi gom, mỗi credential `refund` phải nhận lại tổng `lovelace − refund_fee` của các ô
+mang nó (`fee_inbox.ak` ▸ hằng `refund_fee`, ▸ `refunds_paid`); người gom giữ `refund_fee` mỗi ô.
+Đầu ra hoàn chỉ được tính khi: địa chỉ là đúng credential đó không kèm phần uỷ quyền, mang
+`InlineDatum` bằng băm của chính phiên bản hộp thư đang gom, và không có reference script — thẻ
+băm này chặn hai phiên bản hộp thư cùng trỏ một kho dùng chung một đầu ra hoàn. Datum sai hình được
+gom như ô không datum. Bên ứng phải soát datum đúng từng byte trước khi ký (chú thích đầu
+`fee_inbox.ak`).
 
 ### `donation_escrow` — kho tạm
 
