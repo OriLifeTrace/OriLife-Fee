@@ -4,6 +4,7 @@
 //// Không có số thực nào trong hợp đồng: mọi phép chia đều là chia nguyên, và chỗ nào
 //// làm tròn thì làm tròn LÊN về phía nghĩa vụ, không về phía người giữ tiền.
 
+use cardano/address.{Credential}
 use cardano/assets.{AssetName}
 use cardano/transaction.{OutputReference}
 
@@ -107,4 +108,18 @@ pub type EscrowRedeemer {
   /// Đổi CARP lấy ADA rồi nộp kho bạc. Ai cũng gọi được — cố ý: nếu OriLife biến mất
   /// thì lời hứa vẫn thực thi được bởi người ngoài.
   Donate
+}
+
+/// Datum tuỳ chọn của một ô hộp thư phí (`fee_inbox`): địa chỉ hoàn khoản min-ADA.
+///
+/// Bên trả phí không có ADA (nông dân) thì bên ứng phí (Feecover) nộp hộ min-ADA cho ô hộp
+/// thư. Ô mang datum này ⟹ khi gom, lovelace của ô trừ `refund_fee` phải về `refund`; người
+/// gom chỉ giữ `refund_fee`. Ô không datum (hoặc datum sai hình) ⟹ lovelace là phần thưởng
+/// người gom như cũ. Trên chuỗi: `Constr 0 [refund]`.
+pub type InboxDatum {
+  /// Payment credential nhận hoàn. Đầu ra hoàn chỉ cần khớp phần này; phần uỷ quyền và
+  /// datum của đầu ra tự do. Là `Script` thì đầu ra hoàn tới script đó KHÔNG có datum —
+  /// script đó phải tiêu được ô không datum; đó là việc của bên giữ script, không phải
+  /// của hộp thư.
+  refund: Credential,
 }
