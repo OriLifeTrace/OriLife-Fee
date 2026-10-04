@@ -11,20 +11,34 @@
 //// là ô "có hoàn": khi gom, lovelace của ô trừ `refund_fee` phải về payment credential
 //// `refund`; người gom chỉ giữ `refund_fee` mỗi ô. Ô không datum giữ đúng hành vi cũ.
 ////
-//// Datum sai hình (không giải mã được thành `InboxDatum`, hoặc là `DatumHash`) ⟹ coi như ô
-//// không datum, KHÔNG làm kẹt tiền. Lý do: Feecover tự soát datum trong chính giao dịch nó
-//// ký, nên datum sai hình là lỗi của bên ứng; còn nếu từ chối ô đó thì CARP trong ô kẹt
-//// vĩnh viễn ở hộp thư (không lối ra nào khác) — kẹt tiền phí tệ hơn mất khoản ứng.
+//// Datum inline sai hình (không giải mã được thành `InboxDatum`, hoặc băm credential khác
+//// 28 byte) ⟹ coi như ô không datum, KHÔNG làm kẹt tiền. Lý do: Feecover tự soát datum trong
+//// chính giao dịch nó ký, nên datum sai hình là lỗi của bên ứng; còn nếu từ chối ô đó thì CARP
+//// trong ô kẹt vĩnh viễn ở hộp thư (không lối ra nào khác) — kẹt tiền phí tệ hơn mất khoản ứng.
+//// Ô mang `DatumHash` thì validator cũng coi như không datum, nhưng KHÔNG có lời hứa gom được:
+//// ledger đòi preimage của datum cho mọi đầu vào khoá Plutus mang `DatumHash` (lỗi phase-1
+//// `MissingRequiredDatums`), không ai giữ preimage thì ô kẹt trước khi validator kịp chạy.
 ////
-//// Phép so hoàn GỘP THEO CREDENTIAL: với mỗi credential `c`, tổng lovelace mọi đầu ra có
-//// payment credential `c` ≥ Σ (lovelace(ô) − `refund_fee`) trên mọi ô có hoàn mang `c`.
-//// So từng ô với "có một đầu ra đủ" thì một đầu ra thoả cho hai ô cùng `c` (thoả kép, cùng
-//// họ với phép so CARP gộp ở dưới).
+//// Hợp đồng ngoài chuỗi cho bên ứng: soát datum đúng TỪNG BYTE trước khi ký — `InlineDatum`
+//// (không `DatumHash`), `Constr 0 [Constr 0|1 [<28 byte>]]` với đúng số trường ở mọi tầng, và
+//// từ chối `refund` là băm hộp thư hoặc băm kho (đầu ra hoàn về đó là tiền gửi ngược vào hợp
+//// đồng, không về tay bên ứng).
 ////
-//// Chỗ hở biết trước, nằm ngoài hộp thư: đầu ra hoàn không mang dấu gì của ô nó hoàn, nên
-//// nếu CÙNG giao dịch còn một script khác cũng đòi "trả đủ cho `c`" thì một đầu ra có thể
-//// thoả cả hai. Hộp thư không thấy luật của script khác; bên dùng `c` làm đích ở nơi khác
-//// phải tự chặn ghép giao dịch.
+//// Phép so hoàn GỘP THEO CREDENTIAL: với mỗi credential `c`, tổng lovelace mọi ĐẦU RA HOÀN về
+//// `c` ≥ Σ (lovelace(ô) − `refund_fee`) trên mọi ô có hoàn mang `c`. So từng ô với "có một đầu
+//// ra đủ" thì một đầu ra thoả cho hai ô cùng `c` (thoả kép, cùng họ với phép so CARP gộp ở dưới).
+////
+//// Đầu ra HOÀN có hình cố định, khác hình thì không được đếm: địa chỉ enterprise đúng `c` (không
+//// phần uỷ quyền), `InlineDatum` = băm script của CHÍNH hộp thư này (ByteArray), không reference
+//// script. Ba lý do, đo bằng bài kiểm:
+////   * hai phiên bản hộp thư (khác băm, cùng kho — kho cộng CARP của mọi đầu vào script nên
+////     cho phép) mỗi bản một ô hoàn về cùng `c`: không có thẻ thì MỘT đầu ra về `c` thoả cả hai
+////     mặt withdraw. Thẻ băm riêng từng phiên bản ⟹ hai bản không dùng chung được đầu ra;
+////   * người gom không được tự chọn datum / phần uỷ quyền / reference script của tiền hoàn;
+////   * `refund` = băm kho hoặc băm hộp thư: đầu ra sổ (mang `VaultDatum`) và ô hộp thư mới (không
+////     thẻ) không khớp hình, nên không tự thoả nghĩa vụ hoàn.
+//// Script khác trong cùng giao dịch mà cũng nhận đúng hình đầu ra này cho `c` thì vẫn dùng chung
+//// được — hộp thư không thấy luật của script khác; bên dùng `c` làm đích ở nơi khác phải tự chặn.
 ////
 //// Hộp thư không đọc redeemer của kho phí. Nó không cần: trong mọi nhánh của kho, chỉ
 //// `Collect` làm CARP ở ô sổ TĂNG (`Operate` cấm nạp, `Skim` làm giảm), và `Collect` ép
@@ -61,7 +75,8 @@ use cardano/certificate.{
   UnregisterCredential,
 }
 use cardano/transaction.{
-  DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
+  Datum, DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference,
+  Transaction,
 }
 use orilife/fixtures.{
   carp_name, carp_policy, inbox_hash, inline, input_from, operator_key, ref_at,
@@ -101,6 +116,9 @@ validator fee_inbox(
     // Thứ tự phép so là thứ tự theo chi phí: so credential (một phép so byte) trước, chỉ
     // đọc giá trị khi credential đã khớp.
     let inbox_credential = account
+    // Thẻ của đầu ra hoàn: băm script của chính phiên bản hộp thư này.
+    expect Script(inbox_hash) = account
+    let refund_tag = InlineDatum(inbox_hash)
     let vault_credential = Script(vault_hash)
     // Một vòng qua đầu vào, chia ba loại: ô hộp thư (MỌI ô ở script này), ô sổ (giữ NFT),
     // ô lạc bên kho (script kho, không NFT).
@@ -150,7 +168,7 @@ validator fee_inbox(
           )
         and {
           ledger_gain >= inbox_carp + vault_stray_carp,
-          refunds_paid(owed, tx.outputs),
+          refunds_paid(owed, tx.outputs, refund_tag),
         }
       }
       _ -> False
@@ -235,21 +253,37 @@ fn add_to_credential(
   }
 }
 
-/// Mỗi credential trong bảng nợ nhận đủ: tổng lovelace mọi đầu ra có payment credential đó
-/// ≥ tổng nợ. Chỉ so payment credential — phần uỷ quyền và datum của đầu ra tự do.
+/// Mỗi credential trong bảng nợ nhận đủ: tổng lovelace mọi đầu ra HOÀN về credential đó ≥
+/// tổng nợ. Đầu ra hoàn = địa chỉ enterprise (không phần uỷ quyền), `InlineDatum` đúng thẻ
+/// `refund_tag`, không reference script; đầu ra khác hình không được đếm cho ai.
 ///
-/// Không có ô có hoàn ⟹ không đọc đầu ra nào (giữ chi phí lần gom kiểu cũ). Có thì rút
-/// (credential, lovelace) của mọi đầu ra MỘT lần, rồi mỗi dòng nợ quét danh sách đã rút:
-/// trích trường địa chỉ của đầu ra là phần đắt, đừng lặp nó theo số dòng nợ.
-fn refunds_paid(owed: Pairs<Credential, Int>, outputs: List<Output>) -> Bool {
+/// Không có ô có hoàn ⟹ không đọc đầu ra nào (giữ chi phí lần gom kiểu cũ). Có thì lọc đầu ra
+/// hoàn và rút (credential, lovelace) MỘT lần, rồi mỗi dòng nợ quét danh sách đã lọc. Thẻ datum
+/// được so trước: đầu ra sổ, đầu ra thối và đầu ra người gom rơi khỏi danh sách ngay ở đó.
+fn refunds_paid(
+  owed: Pairs<Credential, Int>,
+  outputs: List<Output>,
+  refund_tag: Datum,
+) -> Bool {
   when owed is {
     [] -> True
     _ -> {
       let paid: Pairs<Credential, Int> =
-        list.map(
+        list.foldr(
           outputs,
-          fn(output) {
-            Pair(output.address.payment_credential, lovelace_of(output.value))
+          [],
+          fn(output, acc) {
+            let Address { payment_credential, stake_credential } =
+              output.address
+            if and {
+              output.datum == refund_tag,
+              stake_credential == None,
+              output.reference_script == None,
+            } {
+              [Pair(payment_credential, lovelace_of(output.value)), ..acc]
+            } else {
+              acc
+            }
           },
         )
       list.all(
@@ -542,6 +576,16 @@ fn inbox_with_datum(lovelace: Int, carp: Int, datum: Data) -> Output {
   script_output(inbox_hash, value_with_carp(lovelace, carp), inline(datum))
 }
 
+/// Đầu ra HOÀN đúng hình: enterprise về `credential`, thẻ = băm hộp thư, không ref script.
+fn refund_to(credential: Credential, lovelace: Int) -> Output {
+  Output {
+    address: Address { payment_credential: credential, stake_credential: None },
+    value: from_lovelace(lovelace),
+    datum: InlineDatum(inbox_hash),
+    reference_script: None,
+  }
+}
+
 /// Đầu ra enterprise trả `lovelace` tới payment credential `credential`.
 fn paid_to(credential: Credential, lovelace: Int) -> Output {
   wallet_output(
@@ -581,7 +625,7 @@ test a_refund_cell_returns_its_lovelace_minus_the_fee() {
       [ledger(0), refund_inbox(2_000_000, 100, feecover())],
       [
         ledger(100),
-        paid_to(feecover(), 2_000_000 - refund_fee),
+        refund_to(feecover(), 2_000_000 - refund_fee),
         paid_to(VerificationKey(stranger_key), refund_fee),
       ],
     )
@@ -601,7 +645,7 @@ test refund_cells_of_one_credential_are_paid_by_one_output() {
         refund_inbox(1_500_000, 100, feecover()),
         refund_inbox(3_000_000, 100, feecover()),
       ],
-      [ledger(300), paid_to(feecover(), 6_500_000 - 3 * refund_fee)],
+      [ledger(300), refund_to(feecover(), 6_500_000 - 3 * refund_fee)],
     ),
   )
 }
@@ -619,34 +663,24 @@ test refund_cells_of_distinct_credentials_each_get_their_share() {
       ],
       [
         ledger(300),
-        script_output(
-          refund_script_hash,
-          from_lovelace(3_000_000 - refund_fee),
-          NoDatum,
-        ),
-        paid_to(other_feecover(), 1_500_000 - refund_fee),
-        paid_to(feecover(), 2_000_000 - refund_fee),
+        refund_to(Script(refund_script_hash), 3_000_000 - refund_fee),
+        refund_to(other_feecover(), 1_500_000 - refund_fee),
+        refund_to(feecover(), 2_000_000 - refund_fee),
       ],
     ),
   )
 }
 
-/// CỰC DƯƠNG. Hoàn chia hai đầu ra cùng payment credential; một đầu ra có phần uỷ quyền và
-/// datum lạ — chỉ payment credential được so.
-test a_refund_may_be_split_across_outputs_with_any_stake_part_and_datum() {
-  let delegated =
-    Output {
-      ..paid_to(feecover(), 1_000_000),
-      address: Address {
-        payment_credential: feecover(),
-        stake_credential: Some(address.Inline(VerificationKey(stranger_key))),
-      },
-      datum: inline(42),
-    }
+/// CỰC DƯƠNG. Hoàn chia hai đầu ra hoàn đúng hình cùng credential: phép so cộng dồn.
+test a_refund_may_be_split_across_two_tagged_outputs() {
   withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, feecover())],
-      [ledger(100), delegated, paid_to(feecover(), 1_000_000 - refund_fee)],
+      [
+        ledger(100),
+        refund_to(feecover(), 1_000_000),
+        refund_to(feecover(), 1_000_000 - refund_fee),
+      ],
     ),
   )
 }
@@ -663,7 +697,7 @@ test datumless_and_refund_cells_mix_in_one_sweep() {
       [
         ledger(200),
         paid_to(VerificationKey(stranger_key), 5_000_000 + refund_fee),
-        paid_to(feecover(), 2_000_000 - refund_fee),
+        refund_to(feecover(), 2_000_000 - refund_fee),
       ],
     ),
   )
@@ -674,7 +708,7 @@ test a_refund_short_by_one_lovelace_is_rejected() {
   !withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, feecover())],
-      [ledger(100), paid_to(feecover(), 2_000_000 - refund_fee - 1)],
+      [ledger(100), refund_to(feecover(), 2_000_000 - refund_fee - 1)],
     ),
   )
 }
@@ -689,7 +723,7 @@ test two_refund_cells_of_one_credential_cannot_share_one_refund() {
         refund_inbox(2_000_000, 100, feecover()),
         refund_inbox(2_000_000, 100, feecover()),
       ],
-      [ledger(200), paid_to(feecover(), 2_000_000 - refund_fee)],
+      [ledger(200), refund_to(feecover(), 2_000_000 - refund_fee)],
     ),
   )
 }
@@ -703,7 +737,7 @@ test two_refund_cells_reject_a_refund_one_below_their_total() {
         refund_inbox(2_000_000, 100, feecover()),
         refund_inbox(2_000_000, 100, feecover()),
       ],
-      [ledger(200), paid_to(feecover(), 4_000_000 - 2 * refund_fee - 1)],
+      [ledger(200), refund_to(feecover(), 4_000_000 - 2 * refund_fee - 1)],
     ),
   )
 }
@@ -713,7 +747,7 @@ test a_refund_to_the_wrong_credential_is_rejected() {
   !withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, feecover())],
-      [ledger(100), paid_to(other_feecover(), 2_000_000 - refund_fee)],
+      [ledger(100), refund_to(other_feecover(), 2_000_000 - refund_fee)],
     ),
   )
 }
@@ -723,14 +757,7 @@ test a_refund_to_a_script_with_the_same_hash_is_rejected() {
   !withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, feecover())],
-      [
-        ledger(100),
-        script_output(
-          feecover_key,
-          from_lovelace(2_000_000 - refund_fee),
-          NoDatum,
-        ),
-      ],
+      [ledger(100), refund_to(Script(feecover_key), 2_000_000 - refund_fee)],
     ),
   )
 }
@@ -754,7 +781,7 @@ test overpaying_one_credential_cannot_cover_another() {
         refund_inbox(2_000_000, 100, feecover()),
         refund_inbox(2_000_000, 100, other_feecover()),
       ],
-      [ledger(200), paid_to(feecover(), 4_000_000 - 2 * refund_fee)],
+      [ledger(200), refund_to(feecover(), 4_000_000 - 2 * refund_fee)],
     ),
   )
 }
@@ -764,14 +791,16 @@ test a_paid_refund_does_not_waive_the_carp_rule() {
   !withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, feecover())],
-      [ledger(99), paid_to(feecover(), 2_000_000 - refund_fee)],
+      [ledger(99), refund_to(feecover(), 2_000_000 - refund_fee)],
     ),
   )
 }
 
-/// Datum sai hình ⟹ gom như ô không datum: người gom lấy trọn lovelace, không ai đòi hoàn.
-/// Mỗi ô là một kiểu sai khác nhau; nếu MỘT ô bị đọc nhầm thành ô có hoàn thì bài đỏ.
-test malformed_datums_are_swept_like_datumless_cells() {
+/// Datum sai hình ⟹ mặt withdraw đối xử như ô không datum: người gom lấy trọn lovelace,
+/// không ai đòi hoàn. Mỗi ô là một kiểu sai khác nhau; nếu MỘT ô bị đọc nhầm thành ô có hoàn
+/// thì bài đỏ. Bài chỉ ghim PHASE-2 (luật của validator). Ô `DatumHash` dưới đây chỉ tới được
+/// phase-2 khi giao dịch kèm preimage; không ai có preimage thì ledger chặn ở phase-1.
+test malformed_datums_are_treated_like_datumless_cells_in_phase_two() {
   let short_hash = #"88888888888888888888888888888888888888888888888888888888"
   let malformed: List<Data> =
     [
@@ -819,6 +848,150 @@ test a_datum_with_an_extra_field_is_swept_like_a_datumless_cell() {
         inbox_with_datum(2_000_000, 100, as_data(Pair2 { a: feecover(), b: 7 })),
       ],
       [ledger(100), paid_to(VerificationKey(stranger_key), 2_000_000)],
+    ),
+  )
+}
+
+// ─── Hình đầu ra hoàn: thẻ băm hộp thư, enterprise, không ref script ───────────
+
+const other_inbox_hash: ByteArray =
+  #"67676767676767676767676767676767676767676767676767676767"
+
+/// Mặt `withdraw` của một phiên bản hộp thư bất kỳ (băm `hash`), cùng kho.
+fn withdraw_as(hash: ByteArray, tx_body: Transaction) -> Bool {
+  fee_inbox.withdraw(
+    carp_policy,
+    carp_name,
+    vault_hash,
+    void(),
+    Script(hash),
+    tx_body,
+  )
+}
+
+/// Hai phiên bản hộp thư, mỗi bản một ô hoàn về Feecover, sổ ghi đủ CARP của cả hai.
+fn two_versions_sweep(refunds: List<Output>) -> Transaction {
+  sweep(
+    [
+      ledger(0),
+      refund_inbox(2_000_000, 100, feecover()),
+      script_output(
+        other_inbox_hash,
+        value_with_carp(2_000_000, 100),
+        inline(InboxDatum { refund: feecover() }),
+      ),
+    ],
+    [ledger(200), ..refunds],
+  )
+}
+
+/// CỰC DƯƠNG của bài dưới: mỗi phiên bản một đầu ra hoàn mang thẻ của chính nó.
+test two_inbox_versions_pass_with_one_tagged_refund_each() {
+  let body =
+    two_versions_sweep(
+      [
+        refund_to(feecover(), 2_000_000 - refund_fee),
+        Output {
+          ..refund_to(feecover(), 2_000_000 - refund_fee),
+          datum: InlineDatum(other_inbox_hash),
+        },
+      ],
+    )
+  and {
+    withdraw_as(inbox_hash, body),
+    withdraw_as(other_inbox_hash, body),
+  }
+}
+
+/// CỰC ÂM (thoả kép giữa hai phiên bản). Một đầu ra hoàn duy nhất về Feecover: không có thẻ
+/// thì nó thoả mặt withdraw của CẢ HAI phiên bản. Có thẻ thì phiên bản kia không đếm nó.
+test two_inbox_versions_cannot_share_one_refund_output() {
+  let body = two_versions_sweep([refund_to(feecover(), 2_000_000 - refund_fee)])
+  !and {
+    withdraw_as(inbox_hash, body),
+    withdraw_as(other_inbox_hash, body),
+  }
+}
+
+/// CỰC ÂM. Đúng tiền, đúng credential, nhưng có phần uỷ quyền (của người gom).
+test a_refund_output_with_a_stake_part_is_not_counted() {
+  !withdraw_ok(
+    sweep(
+      [ledger(0), refund_inbox(2_000_000, 100, feecover())],
+      [
+        ledger(100),
+        Output {
+          ..refund_to(feecover(), 2_000_000 - refund_fee),
+          address: Address {
+            payment_credential: feecover(),
+            stake_credential: Some(
+              address.Inline(VerificationKey(stranger_key)),
+            ),
+          },
+        },
+      ],
+    ),
+  )
+}
+
+/// CỰC ÂM. Đúng tiền, đúng địa chỉ, nhưng không datum.
+test a_refund_output_without_the_tag_is_not_counted() {
+  !withdraw_ok(
+    sweep(
+      [ledger(0), refund_inbox(2_000_000, 100, feecover())],
+      [ledger(100), paid_to(feecover(), 2_000_000 - refund_fee)],
+    ),
+  )
+}
+
+/// CỰC ÂM. Datum là thẻ của phiên bản hộp thư khác.
+test a_refund_output_tagged_for_another_inbox_is_not_counted() {
+  !withdraw_ok(
+    sweep(
+      [ledger(0), refund_inbox(2_000_000, 100, feecover())],
+      [
+        ledger(100),
+        Output {
+          ..refund_to(feecover(), 2_000_000 - refund_fee),
+          datum: InlineDatum(other_inbox_hash),
+        },
+      ],
+    ),
+  )
+}
+
+/// CỰC ÂM. Đúng hình mọi thứ nhưng có reference script.
+test a_refund_output_with_a_reference_script_is_not_counted() {
+  !withdraw_ok(
+    sweep(
+      [ledger(0), refund_inbox(2_000_000, 100, feecover())],
+      [
+        ledger(100),
+        Output {
+          ..refund_to(feecover(), 2_000_000 - refund_fee),
+          reference_script: Some(refund_script_hash),
+        },
+      ],
+    ),
+  )
+}
+
+/// CỰC ÂM. `refund` = băm kho: đầu ra sổ (đủ lovelace, mang `VaultDatum`) không thoả hoàn.
+test a_refund_to_the_vault_is_not_paid_by_the_ledger_output() {
+  !withdraw_ok(
+    sweep(
+      [ledger(0), refund_inbox(2_000_000, 100, Script(vault_hash))],
+      [ledger(100), paid_to(VerificationKey(stranger_key), 2_000_000)],
+    ),
+  )
+}
+
+/// CỰC ÂM. `refund` = băm hộp thư: một ô hộp thư mới (không thẻ) không thoả hoàn.
+test a_refund_to_the_inbox_is_not_paid_by_a_fresh_inbox_cell() {
+  !withdraw_ok(
+    sweep(
+      [ledger(0), refund_inbox(2_000_000, 100, Script(inbox_hash))],
+      [ledger(100), inbox_utxo(2_000_000, 0)],
     ),
   )
 }
@@ -944,10 +1117,10 @@ fn refund_sweep_of(n: Int, distinct: Bool) -> Transaction {
     if distinct {
       list.map(
         list.range(1, n),
-        fn(i) { paid_to(nth_credential(i), 2_000_000 - refund_fee) },
+        fn(i) { refund_to(nth_credential(i), 2_000_000 - refund_fee) },
       )
     } else {
-      [paid_to(feecover(), n * ( 2_000_000 - refund_fee ))]
+      [refund_to(feecover(), n * ( 2_000_000 - refund_fee ))]
     }
   sweep([ledger(0), ..cells], [ledger(100 * n), ..refunds])
 }

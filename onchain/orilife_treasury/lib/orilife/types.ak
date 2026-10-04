@@ -113,13 +113,14 @@ pub type EscrowRedeemer {
 /// Datum tuỳ chọn của một ô hộp thư phí (`fee_inbox`): địa chỉ hoàn khoản min-ADA.
 ///
 /// Bên trả phí không có ADA (nông dân) thì bên ứng phí (Feecover) nộp hộ min-ADA cho ô hộp
-/// thư. Ô mang datum này ⟹ khi gom, lovelace của ô trừ `refund_fee` phải về `refund`; người
-/// gom chỉ giữ `refund_fee`. Ô không datum (hoặc datum sai hình) ⟹ lovelace là phần thưởng
-/// người gom như cũ. Trên chuỗi: `Constr 0 [refund]`.
+/// thư. Ô mang `InlineDatum` này ⟹ khi gom, lovelace của ô trừ `refund_fee` phải về `refund`;
+/// người gom chỉ giữ `refund_fee`. Ô không datum, hoặc datum inline sai hình ⟹ lovelace là phần
+/// thưởng người gom như cũ. Ô mang `DatumHash` KHÔNG được hứa là gom được: ledger đòi preimage
+/// của datum cho đầu vào khoá Plutus. Trên chuỗi: `Constr 0 [refund]`.
 pub type InboxDatum {
-  /// Payment credential nhận hoàn. Đầu ra hoàn chỉ cần khớp phần này; phần uỷ quyền và
-  /// datum của đầu ra tự do. Là `Script` thì đầu ra hoàn tới script đó KHÔNG có datum —
-  /// script đó phải tiêu được ô không datum; đó là việc của bên giữ script, không phải
-  /// của hộp thư.
+  /// Payment credential nhận hoàn. Đầu ra hoàn có hình cố định: địa chỉ enterprise đúng
+  /// credential này (không phần uỷ quyền), `InlineDatum` = băm script của hộp thư (ByteArray),
+  /// không reference script. Là `Script` thì script đó phải tiêu được ô mang datum ấy — việc
+  /// của bên giữ script, không phải của hộp thư. Không được là băm hộp thư hay băm kho.
   refund: Credential,
 }

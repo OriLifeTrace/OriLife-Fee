@@ -123,8 +123,16 @@ if (inbox.length > 0) {
     .attach.SpendingValidator(scripts.inboxScript)
     .attach.WithdrawalValidator(scripts.inboxScript);
 }
+// Đầu ra hoàn có hình cố định, khác hình thì validator không đếm (`fee_inbox.ak` ▸
+// `refunds_paid`): địa chỉ enterprise (không phần uỷ quyền), datum inline = băm hộp thư dạng
+// Bytes (thẻ chống hai phiên bản hộp thư dùng chung một đầu ra), không reference script.
+const refundTag = Data.to(scripts.inboxHash);
 for (const { credential, lovelace } of owed.values()) {
-  builder = builder.pay.ToAddress(credentialToAddress(NETWORK, credential), { lovelace });
+  builder = builder.pay.ToContract(
+    credentialToAddress(NETWORK, credential),
+    { kind: "inline", value: refundTag },
+    { lovelace },
+  );
 }
 const sweepTx = await builder
   .pay.ToContract(
