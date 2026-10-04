@@ -28,9 +28,11 @@ const FEE_CARP = 1_000n;
 const REFUND_FEE = 100_000n;
 
 /// `InboxDatum { refund }` = `Constr 0 [Credential]`, `Credential` = `Constr 0 [khoá]` (khoá
-/// ví) hoặc `Constr 1 [băm script]`, băm đúng 28 byte. Hình khác ⟹ `null`: validator gom ô đó
-/// như ô không datum, nên kịch bản cũng không trả hoàn (`fee_inbox.ak` ▸ `add_refund_owed`).
-function refundOf(utxo) {
+/// ví) hoặc `Constr 1 [băm script]`, băm đúng 28 byte, và không phải băm kho `vaultHash`. Hình
+/// khác ⟹ `null`: validator gom ô đó như ô không datum, nên kịch bản cũng không trả hoàn
+/// (`fee_inbox.ak` ▸ `add_refund_owed`). Ca băm kho phải khớp validator theo cả hai chiều: dựng
+/// đầu ra hoàn về kho thì kho bác lượt gom (đòi đúng một đầu ra ở địa chỉ mình).
+function refundOf(utxo, vaultHash) {
   if (!utxo.datum) return null;
   let d;
   try { d = Data.from(utxo.datum); } catch { return null; }
@@ -39,15 +41,44 @@ function refundOf(utxo) {
   if (!(c instanceof Constr) || c.index > 1 || c.fields.length !== 1) return null;
   const hash = c.fields[0];
   if (typeof hash !== "string" || !/^[0-9a-f]{56}$/.test(hash)) return null;
+  if (c.index === 1 && hash === vaultHash) return null;
   return { type: c.index === 0 ? "Key" : "Script", hash };
+}
+
+/// Chọn ô hộp thư cho một lượt từ danh sách đã xếp CARP giảm dần: tối đa `maxCells` ô, và các ô
+/// có hoàn mang tối đa `maxCredentials` credential khác nhau. Ô mang credential thứ
+/// `maxCredentials + 1` bị bỏ lại cho lượt sau; ô không datum và ô thuộc credential đã chọn thì
+/// vẫn được nhặt tiếp.
+function pickInbox(sorted, vaultHash, maxCells, maxCredentials) {
+  const credentials = new Set();
+  const picked = [];
+  for (const u of sorted) {
+    if (picked.length === maxCells) break;
+    const r = refundOf(u, vaultHash);
+    if (r) {
+      const key = `${r.type}:${r.hash}`;
+      if (!credentials.has(key)) {
+        if (credentials.size === maxCredentials) continue;
+        credentials.add(key);
+      }
+    }
+    picked.push(u);
+  }
+  return picked;
 }
 
 /// Trần số ô hộp thư mỗi lượt gom. `aiken check` cho N = 50 khoảng 8,4M mem trên trần 14M,
 /// nhưng số đó chưa tính giải mã ScriptContext trên chuỗi; 30 là mức thận trọng tới khi có
-/// số đo trên Preprod. Còn dư thì chạy lại kịch bản. Ô có hoàn mỗi ô một credential khác nhau
-/// thì phép so hoàn tăng theo bình phương: đo bằng `aiken check` chạm trần mem ở khoảng 30 ô
-/// cả giao dịch (cùng một credential thì khoảng 55), nên 30 vẫn là trần đúng cho ca xấu nhất.
+/// số đo trên Preprod. Còn dư thì chạy lại kịch bản.
 const MAX_SWEEP = 30;
+
+/// Trần số credential hoàn khác nhau mỗi lượt gom. Phép so hoàn ở mặt `withdraw` tốn theo
+/// (số ô × số credential), nên trần số ô một mình KHÔNG đủ: ai cũng gửi được ô có hoàn vào hộp
+/// thư, và ô mỗi cái một credential đẩy lượt gom quá trần mem. Đo trên Emulator (phase-two chạy
+/// thật, 04/10/2026, kèm 2 ô lạc có CARP): 28 ô hộp thư mỗi ô một credential vượt trần, 27 ô
+/// tổng 13,9M/14M. Với 30 ô + 4 ô lạc có CARP: 17 credential vượt trần; ở trần 10 (ca xấu nhất:
+/// 30 ô, 10 credential, 4 ô lạc có CARP) tổng 12,4M/14M, cùng credential 10,8M.
+const MAX_REFUND_CREDENTIALS = 10;
 
 /// Trần số ô lạc ở địa chỉ kho mỗi lượt. Mỗi ô lạc chạy lại validator kho trên toàn bộ đầu vào
 /// nên chi phí tăng theo bình phương; 16 ô chỉ-ADA đã đủ làm lượt gom vượt ngân sách. Chỉ ô
@@ -78,14 +109,17 @@ console.log("tx       ", payHash, explorer(payHash));
 await awaitTx(lucid, payHash, "nộp phí:");
 
 // ── Bước 2: gom hộp thư (và ô lạc ở địa chỉ kho) vào sổ ──────────────────────
-const inboxPick = sweepable(await lucid.utxosAt(scripts.inboxAddress), scripts.carpUnit, MAX_SWEEP);
+const inboxUtxos = await lucid.utxosAt(scripts.inboxAddress);
+const inbox = pickInbox(
+  sweepable(inboxUtxos, scripts.carpUnit, inboxUtxos.length).picked,
+  scripts.vaultHash, MAX_SWEEP, MAX_REFUND_CREDENTIALS,
+);
 const { ledger: vault, strays: allStrays } = splitVaultUtxos(
   await lucid.utxosAt(scripts.vaultAddress), scripts.vaultNftUnit,
 );
 const strayPick = sweepable(allStrays, scripts.carpUnit, MAX_STRAYS);
-const inbox = inboxPick.picked;
 const strays = strayPick.picked;
-console.log("bỏ lại   ", inboxPick.skipped, "ô hộp thư +", strayPick.skipped, "ô ở địa chỉ kho (không CARP, datum không giải được, có script, hoặc quá trần)");
+console.log("bỏ lại   ", inboxUtxos.length - inbox.length, "ô hộp thư +", strayPick.skipped, "ô ở địa chỉ kho (không CARP, datum không giải được, có script, hoặc quá trần)");
 const carpOf = (u) => u.assets[scripts.carpUnit] ?? 0n;
 const amount = [...inbox, ...strays].reduce((acc, u) => acc + carpOf(u), 0n);
 if (amount <= 0n) { console.log("hộp thư không có CARP để gom"); process.exit(0); }
@@ -102,7 +136,7 @@ console.log("sổ sau   ", after.collected, "/", after.skimmed);
 // Nợ hoàn gộp theo credential, đúng phép so của validator: một đầu ra cho mỗi credential.
 const owed = new Map();
 for (const u of inbox) {
-  const r = refundOf(u);
+  const r = refundOf(u, scripts.vaultHash);
   if (!r) continue;
   const key = `${r.type}:${r.hash}`;
   const prev = owed.get(key) ?? { credential: r, lovelace: 0n };

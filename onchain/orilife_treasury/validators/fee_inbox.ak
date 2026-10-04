@@ -11,8 +11,11 @@
 //// là ô "có hoàn": khi gom, lovelace của ô trừ `refund_fee` phải về payment credential
 //// `refund`; người gom chỉ giữ `refund_fee` mỗi ô. Ô không datum giữ đúng hành vi cũ.
 ////
-//// Datum inline sai hình (không giải mã được thành `InboxDatum`, hoặc băm credential khác
-//// 28 byte) ⟹ coi như ô không datum, KHÔNG làm kẹt tiền. Lý do: Feecover tự soát datum trong
+//// Datum inline sai hình (không giải mã được thành `InboxDatum`, băm credential khác 28 byte,
+//// hoặc `refund` = `Script(vault_hash)`) ⟹ coi như ô không datum, KHÔNG làm kẹt tiền. Ca băm
+//// kho phải nằm trong danh sách này vì không giao dịch nào trả hoàn về đó được: lượt gom bắt
+//// buộc tiêu ô sổ, mà kho đòi ĐÚNG MỘT đầu ra ở địa chỉ của nó (ô sổ mang `VaultDatum`, không
+//// mang thẻ hoàn) — đòi hoàn về kho là khoá ô vĩnh viễn. Lý do: Feecover tự soát datum trong
 //// chính giao dịch nó ký, nên datum sai hình là lỗi của bên ứng; còn nếu từ chối ô đó thì CARP
 //// trong ô kẹt vĩnh viễn ở hộp thư (không lối ra nào khác) — kẹt tiền phí tệ hơn mất khoản ứng.
 //// Ô mang `DatumHash` thì validator cũng coi như không datum, nhưng KHÔNG có lời hứa gom được:
@@ -35,8 +38,8 @@
 ////     cho phép) mỗi bản một ô hoàn về cùng `c`: không có thẻ thì MỘT đầu ra về `c` thoả cả hai
 ////     mặt withdraw. Thẻ băm riêng từng phiên bản ⟹ hai bản không dùng chung được đầu ra;
 ////   * người gom không được tự chọn datum / phần uỷ quyền / reference script của tiền hoàn;
-////   * `refund` = băm kho hoặc băm hộp thư: đầu ra sổ (mang `VaultDatum`) và ô hộp thư mới (không
-////     thẻ) không khớp hình, nên không tự thoả nghĩa vụ hoàn.
+////   * `refund` = băm hộp thư: ô hộp thư mới (không thẻ) không khớp hình, nên không tự thoả
+////     nghĩa vụ hoàn. (`refund` = băm kho thì không có nghĩa vụ nào — xem đoạn datum sai hình.)
 //// Script khác trong cùng giao dịch mà cũng nhận đúng hình đầu ra này cho `c` thì vẫn dùng chung
 //// được — hộp thư không thấy luật của script khác; bên dùng `c` làm đích ở nơi khác phải tự chặn.
 ////
@@ -136,7 +139,7 @@ validator fee_inbox(
               ledgers,
               inbox + carp_of(output, carp_policy, carp_name),
               strays,
-              add_refund_owed(owed, output),
+              add_refund_owed(owed, output, vault_credential),
             )
           } else if holds_vault_nft(output, vault_hash) {
             ([output, ..ledgers], inbox, strays, owed)
@@ -206,13 +209,20 @@ fn carp_of(output: Output, policy: PolicyId, name: AssetName) -> Int {
 fn add_refund_owed(
   owed: Pairs<Credential, Int>,
   output: Output,
+  vault_credential: Credential,
 ) -> Pairs<Credential, Int> {
   when output.datum is {
     InlineDatum(data) ->
       if data is InboxDatum { refund }: InboxDatum {
-        // Băm không đủ 28 byte thì không địa chỉ nào trên chuỗi mang được credential đó:
-        // đòi hoàn về nó là khoá vĩnh viễn ô (và CARP trong ô). Coi là datum sai hình.
-        if bytearray.length(credential_hash(refund)) == 28 {
+        // Hai đích không trả hoàn được, cả hai coi là datum sai hình (đòi hoàn về đó là khoá
+        // vĩnh viễn ô và CARP trong ô):
+        //   * băm không đủ 28 byte: không địa chỉ nào trên chuỗi mang được credential đó;
+        //   * băm kho: lượt gom tiêu ô sổ, kho đòi đúng một đầu ra ở địa chỉ mình, và đầu ra đó
+        //     là ô sổ (`VaultDatum`, không thẻ hoàn).
+        if and {
+          bytearray.length(credential_hash(refund)) == 28,
+          refund != vault_credential,
+        } {
           add_to_credential(
             owed,
             refund,
@@ -976,12 +986,43 @@ test a_refund_output_with_a_reference_script_is_not_counted() {
   )
 }
 
-/// CỰC ÂM. `refund` = băm kho: đầu ra sổ (đủ lovelace, mang `VaultDatum`) không thoả hoàn.
-test a_refund_to_the_vault_is_not_paid_by_the_ledger_output() {
-  !withdraw_ok(
+/// CỰC DƯƠNG. `refund` = băm kho: không giao dịch nào trả hoàn về kho được (kho đòi đúng một
+/// đầu ra ở địa chỉ mình, và đó là ô sổ), nên đòi hoàn là khoá ô vĩnh viễn. Ô được gom như ô
+/// không datum: CARP vào sổ, lovelace về người gom.
+test a_refund_to_the_vault_is_swept_like_a_datumless_cell() {
+  withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, Script(vault_hash))],
       [ledger(100), paid_to(VerificationKey(stranger_key), 2_000_000)],
+    ),
+  )
+}
+
+/// CỰC ÂM của bài trên: miễn nợ hoàn KHÔNG miễn luật CARP — sổ tăng thiếu một đơn vị là bác.
+test a_refund_to_the_vault_still_owes_its_carp_to_the_ledger() {
+  !withdraw_ok(
+    sweep(
+      [ledger(0), refund_inbox(2_000_000, 100, Script(vault_hash))],
+      [ledger(99), paid_to(VerificationKey(stranger_key), 2_000_000)],
+    ),
+  )
+}
+
+/// CỰC ÂM. Miễn nợ theo TỪNG Ô: ô hoàn về kho đi cùng ô hoàn về Feecover thì Feecover vẫn
+/// phải nhận đủ phần của mình.
+test a_refund_to_the_vault_does_not_waive_another_cells_refund() {
+  !withdraw_ok(
+    sweep(
+      [
+        ledger(0),
+        refund_inbox(2_000_000, 100, Script(vault_hash)),
+        refund_inbox(2_000_000, 100, feecover()),
+      ],
+      [
+        ledger(200),
+        refund_to(feecover(), 2_000_000 - refund_fee - 1),
+        paid_to(VerificationKey(stranger_key), 2_000_000),
+      ],
     ),
   )
 }
