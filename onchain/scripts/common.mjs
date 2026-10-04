@@ -109,13 +109,17 @@ export function saveState(patch) {
 /// trạng thái thuộc về instance kho đang mở.
 const SHARED_KEYS = new Set([
   "network", "wallet", "operatorKeyHash", "carpPolicy", "carpName", "carpUnit", "mintTx",
-  "previous", "closed",
+  "previous", "closed", "strayOpen",
 ]);
+
+/// Trường đồng CARP chụp kèm mỗi instance khi dời vào `closed`: CARP đổi được giữa hai
+/// instance (`02` nhận CARP qua biến môi trường), nên bản lưu phải tự mang đồng nó đã dùng.
+const CARP_KEYS = ["carpPolicy", "carpName", "carpUnit", "mintTx"];
 
 /// Tệp trạng thái là NHẬT KÝ những gì đã chạy trên Preprod, không chỉ là con trỏ tới
 /// instance hiện tại. Trước khi mở instance mới: instance ở gốc tệp đã đóng thì dời
-/// nguyên trạng vào `closed` (giữ thứ tự); chưa đóng thì dừng — mở kho mới khi kho cũ
-/// còn tài sản là bỏ lại tài sản đó.
+/// nguyên trạng vào `closed` (giữ thứ tự, kèm đồng CARP nó dùng); chưa đóng thì dừng — mở
+/// kho mới khi kho cũ còn tài sản là bỏ lại tài sản đó.
 export function archiveClosedInstance() {
   const s = state();
   const own = Object.keys(s).filter((k) => !SHARED_KEYS.has(k));
@@ -123,7 +127,9 @@ export function archiveClosedInstance() {
   if (!s.closeTx) {
     throw new Error("instance ở gốc tệp trạng thái chưa đóng — chạy 06_close_vault.mjs trước");
   }
-  const archived = Object.fromEntries(own.map((k) => [k, s[k]]));
+  const archived = Object.fromEntries(
+    [...CARP_KEYS.filter((k) => k in s), ...own].map((k) => [k, s[k]]),
+  );
   const next = Object.fromEntries(Object.entries(s).filter(([k]) => SHARED_KEYS.has(k)));
   next.closed = [...(s.closed ?? []), archived];
   writeFileSync(STATE_FILE, JSON.stringify(next, null, 2) + "\n");
@@ -139,9 +145,19 @@ export function archiveClosedInstance() {
 ///
 /// Khoá vận hành KHÔNG còn là tham số kho: nó nằm trong datum ô sổ (`schemas.mjs` ▸
 /// `VaultDatum.operator_key`), nên xoay khoá không đổi băm kho, NFT sổ hay địa chỉ hộp thư.
+///
+/// `carpName` là tên tài sản dạng HEX (đúng bytes trên chuỗi), không phải chữ: tên CARP thật
+/// là 28 byte không đọc được thành chữ, nên mã hoá chữ→hex ở đây sẽ ra một đồng khác mà không
+/// ai báo. Tệp trạng thái cũ còn ghi `"tCARP"` dạng chữ thì dừng ở đây, không đoán.
 export function buildScripts({ carpPolicy, carpName, seed }) {
   if (!seed) throw new Error("thiếu `seed` — chạy 02_open_vault.mjs để chọn và ghi seed trước");
-  const nameHex = fromText(carpName);
+  if (!/^[0-9a-f]{56}$/.test(carpPolicy ?? "")) {
+    throw new Error(`carpPolicy phải là 56 ký tự hex, đang là '${carpPolicy}'`);
+  }
+  if (!/^(?:[0-9a-f]{2}){0,32}$/.test(carpName ?? "-")) {
+    throw new Error(`carpName phải là tên tài sản dạng hex (≤32 byte), đang là '${carpName}'`);
+  }
+  const nameHex = carpName;
 
   const escrowScript = {
     type: "PlutusV3",

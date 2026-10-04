@@ -187,7 +187,7 @@ chúng là đổi mã biên dịch, tức đổi địa chỉ hợp đồng — 
 | `decay_ms` (độ dài phiên) | `donation_escrow` | `DECAY_MS` |
 | `lot_min` (lượng nhả tối thiểu) | `donation_escrow` | `LOT_MIN` |
 | `vault_hash` | `fee_inbox` | băm `fee_vault` của instance |
-| chính sách CARP | cả ba | `tCARP` — đồng THỬ, xem ghi chú dưới |
+| chính sách CARP (`carp_policy`, `carp_name`) | cả ba | instance hiện hành: CARP đời 6 (`carpPolicy`/`carpName` ở gốc `deployed_preprod.json`); instance cũ dùng `tCARP` thử |
 
 Thứ tự dựng bắt buộc: `donation_escrow` → `fee_vault` (nhận băm kho tạm và `seed`) →
 `fee_inbox` (nhận băm kho phí). Ngược lại là vòng tròn. Giá trị Mainnet của bộ tham số đấu
@@ -200,6 +200,8 @@ cd onchain/orilife_treasury && aiken check && aiken build
 cd ../.. && node onchain/scripts/lifecycle_emulator.mjs    # trọn vòng đời trên Emulator, không chạm mạng
 node onchain/scripts/01_mint_test_carp.mjs                # từ đây trở đi là Preprod thật
 node onchain/scripts/02_open_vault.mjs     # chọn seed, đúc NFT sổ, đăng ký credential hộp thư
+# mở kho cho một đồng CARP có sẵn trên chuỗi thay vì tCARP (bỏ qua 01):
+ORILIFE_FEE_CARP_POLICY=<56 hex> ORILIFE_FEE_CARP_NAME=<tên tài sản hex> node onchain/scripts/02_open_vault.mjs
 node onchain/scripts/03_collect_fee.mjs    # nộp phí vào hộp thư, rồi gom hộp thư + ô lạc vào sổ
 node onchain/scripts/04_skim.mjs           # trích 10%, mở phiên đấu giá
 node onchain/scripts/05_swap_and_donate.mjs
@@ -222,7 +224,10 @@ Hai giới hạn của bản này:
 
 Trạng thái đã triển khai ghi vào `scripts/deployed_preprod.json`; kịch bản đọc lại tệp đó
 nên chạy lại không đúc thêm hay mở thêm kho. Tệp đó là **nhật ký**: `02` dời instance đã
-đóng vào mảng `closed` trước khi mở instance mới, và dừng nếu instance cũ chưa đóng.
+đóng vào mảng `closed` (kèm đồng CARP nó dùng) trước khi mở instance mới, và dừng nếu instance
+cũ chưa đóng. `carpName` trong tệp là tên tài sản dạng **hex**; `buildScripts` dừng nếu gặp
+dạng chữ. Mảng `strayOpen` giữ instance còn mở nhưng KHÔNG phải instance hiện hành (xem ghi chú
+trong từng bản ghi) — phí chỉ đi vào hộp thư của instance ở gốc tệp.
 
 `lifecycle_emulator.mjs` chạy ĐÚNG các kịch bản trên (không bản sao) trên Emulator của Lucid,
 với tệp trạng thái tạm. Emulator không tự chạy validator lúc nhận giao dịch, nên bộ chạy chạy
