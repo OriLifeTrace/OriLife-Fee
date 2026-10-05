@@ -103,8 +103,12 @@ mang nó (`fee_inbox.ak` ▸ hằng `refund_fee`, ▸ `refunds_paid`); người 
 Đầu ra hoàn chỉ được tính khi: địa chỉ là đúng credential đó không kèm phần uỷ quyền, mang
 `InlineDatum` bằng băm của chính phiên bản hộp thư đang gom, và không có reference script — thẻ
 băm này chặn hai phiên bản hộp thư cùng trỏ một kho dùng chung một đầu ra hoàn. Datum sai hình được
-gom như ô không datum. Bên ứng phải soát datum đúng từng byte trước khi ký (chú thích đầu
-`fee_inbox.ak`).
+gom như ô không datum; `refund` là băm kho cũng tính là sai hình, vì kho đòi đúng một đầu ra ở địa
+chỉ của nó nên không lượt gom nào trả hoàn về đó được. Bên ứng phải soát datum đúng từng byte trước
+khi ký (chú thích đầu `fee_inbox.ak`).
+
+Kịch bản gom `03_collect_fee.mjs` nhặt tối đa 30 ô và tối đa 10 credential hoàn khác nhau mỗi lượt:
+phép so hoàn tốn theo (số ô × số credential), và ai cũng gửi được ô có hoàn vào hộp thư.
 
 ### `donation_escrow` — kho tạm
 

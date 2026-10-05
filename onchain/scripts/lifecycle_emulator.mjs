@@ -24,7 +24,7 @@ import { join } from "node:path";
 import * as CML from "@anastasia-labs/cardano-multiplatform-lib-nodejs";
 import { eval_phase_two_raw } from "@lucid-evolution/uplc";
 import {
-  Lucid, Emulator, generateEmulatorAccount, Data, createCostModels,
+  Lucid, Emulator, generateEmulatorAccount, Data, Constr, createCostModels, credentialToAddress,
   utxoToTransactionInput, utxoToTransactionOutput, SLOT_CONFIG_NETWORK,
 } from "@lucid-evolution/lucid";
 import { VaultDatum, VaultRedeemer, VaultMint } from "./schemas.mjs";
@@ -257,6 +257,62 @@ delete process.env.NEW_OPERATOR_SEED;
 // NFT sổ bị đốt, ô hộp thư này không còn sổ nào để vào.
 await step("03_collect_fee.mjs");
 check(st().collected === ((3_042n) * UNIT).toString(), "sau khi xoay: hộp thư vẫn gom được vào cùng sổ (3 042 tCARP)");
+
+// Ô có hoàn do người ngoài gửi vào hộp thư (bơm thẳng vào sổ Emulator như ô rác ở trên):
+//   · 28 ô, mỗi ô một credential hoàn khác nhau, 1 tCARP — ca đắt nhất của phép so hoàn: nhặt hết
+//     một lượt thì lượt gom vượt ngân sách (đã đo), nên `03` phải chia ra nhiều lượt;
+//   · 1 ô đòi hoàn về CHÍNH KHO, 5 tCARP — không giao dịch nào trả hoàn về kho được (kho đòi đúng
+//     một đầu ra ở địa chỉ mình), nên validator và `03` cùng coi nó như ô không datum;
+//   · 4 ô lạc có CARP ở địa chỉ kho, 7 tCARP mỗi ô — đúng trần `MAX_STRAYS`, để lượt gom đầu chở
+//     đủ phần đắt nhất của ca xấu nhất. Bỏ trần số credential của `03` thì lượt đó vượt ngân sách.
+// Mỗi credential phải nhận đúng `lovelace − refund_fee` ở một đầu ra mang thẻ băm hộp thư.
+{
+  const s = st();
+  const scripts = buildScripts({ carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed });
+  const fake = "ef".repeat(32);
+  const keys = Array.from({ length: 28 }, (_, i) => "22".repeat(27) + i.toString(16).padStart(2, "0"));
+  const refundDatum = (index, hash) => Data.to(new Constr(0, [new Constr(index, [hash])]));
+  const cells = [
+    ...keys.map((hash) => ({ datum: refundDatum(0, hash), carp: UNIT })),
+    { datum: refundDatum(1, scripts.vaultHash), carp: 5n * UNIT },
+  ];
+  cells.forEach(({ datum, carp }, i) => {
+    const assets = { lovelace: 1_500_000n, [s.carpUnit]: carp };
+    emulator.ledger[fake + i] = {
+      utxo: { txHash: fake, outputIndex: i, address: s.inboxAddress, assets, datum }, spent: false,
+    };
+  });
+  for (let i = cells.length; i < cells.length + 4; i++) {
+    const assets = { lovelace: 1_500_000n, [s.carpUnit]: 7n * UNIT };
+    emulator.ledger[fake + i] = {
+      utxo: { txHash: fake, outputIndex: i, address: s.vaultAddress, assets }, spent: false,
+    };
+  }
+  const left = async () => (await lucid.utxosAt(s.inboxAddress)).filter((u) => u.txHash === fake).length;
+  const collectedBefore = BigInt(st().collected);
+  let rounds = 0;
+  while ((await left()) > 0) {
+    if (++rounds > 5) throw new Error(`KHÔNG ĐẠT: sau 5 lượt gom vẫn còn ${await left()} ô có hoàn`);
+    await step("03_collect_fee.mjs");
+  }
+  check(rounds >= 2, `ô có hoàn nhiều credential được chia ra ${rounds} lượt gom, không lượt nào vượt ngân sách`);
+  check(
+    st().collected === (collectedBefore + (33n + 28n) * UNIT + BigInt(rounds) * 1_000n * UNIT).toString(),
+    "sổ ghi đủ CARP của 29 ô có hoàn (33 tCARP), 4 ô lạc (28 tCARP) và các ô `03` tự nộp",
+  );
+  const straysLeft = (await lucid.utxosAt(s.vaultAddress)).filter((u) => u.txHash === fake).length;
+  check(straysLeft === 0, "4 ô lạc có CARP đã vào sổ");
+  const tag = Data.to(scripts.inboxHash);
+  let paid = 0;
+  for (const hash of keys) {
+    const got = await lucid.utxosAt(credentialToAddress("Preprod", { type: "Key", hash }));
+    if (got.length === 1 && got[0].assets.lovelace === 1_400_000n && got[0].datum === tag) paid++;
+  }
+  check(paid === keys.length, `mỗi credential nhận đúng một đầu ra hoàn 1 400 000 lovelace mang thẻ (${paid}/${keys.length})`);
+  const toVault = (await lucid.utxosAt(s.vaultAddress)).filter((u) => u.datum === tag).length;
+  check(toVault === 0, "không đầu ra hoàn nào về địa chỉ kho");
+}
+
 await step("04_skim.mjs");
 emulator.awaitBlock(4_320);
 await step("05_swap_and_donate.mjs");
