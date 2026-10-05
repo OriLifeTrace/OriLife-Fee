@@ -4,7 +4,6 @@
 // từ `plutus.json` do `aiken build` sinh, nên bản trên chuỗi và bản trong mã không thể
 // lệch nhau mà không ai biết.
 
-import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,14 +20,12 @@ export const STATE_FILE = process.env.ORILIFE_FEE_STATE_FILE ?? join(HERE, "depl
 
 export const NETWORK = "Preprod";
 
-/// Đọc bí mật từ `$AGENT_SECRETS`. Giá trị có thể nằm trong dấu nháy kép — bỏ nháp
-/// ở đây một lần thay vì mỗi chỗ dùng lại quên.
-export function secret(key) {
-  const raw = execSync(`grep '^${key}=' "$AGENT_SECRETS" | cut -d= -f2-`, {
-    shell: "/bin/zsh",
-  }).toString().trim();
-  if (!raw) throw new Error(`không tìm thấy biến ${key} trong $AGENT_SECRETS`);
-  return raw.replace(/^"(.*)"$/s, "$1");
+/// Bí mật đi vào tiến trình qua biến môi trường do người chạy đặt ngay trước lệnh. Kịch bản
+/// nhận GIÁ TRỊ, không biết bí mật được cất ở đâu, và không tự mở chỗ cất nào.
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`thiếu biến môi trường ${name}`);
+  return value;
 }
 
 // ── Tham số chính sách ───────────────────────────────────────────────────────
@@ -87,11 +84,11 @@ export async function connect() {
   const lucid = await Lucid(
     new Blockfrost(
       "https://cardano-preprod.blockfrost.io/api/v0",
-      secret("Blockfrost_Aladin_Preprod"),
+      requireEnv("BLOCKFROST_PROJECT_ID"),
     ),
     NETWORK,
   );
-  lucid.selectWallet.fromSeed(secret("FOUNDATION_SEED"));
+  lucid.selectWallet.fromSeed(requireEnv("OPERATOR_SEED"));
   return lucid;
 }
 

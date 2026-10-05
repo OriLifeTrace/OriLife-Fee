@@ -208,6 +208,10 @@ giá chưa có: đó là giá trị THỬ, không phải chính sách — trư�
 
 ## Chạy
 
+Kịch bản chạm Preprod nhận khoá API của nhà cung cấp chuỗi và cụm từ ví vận hành qua biến môi
+trường, đặt ngay trước lệnh (tên biến: `connect()` trong `scripts/common.mjs`). Kịch bản không tự
+đọc tệp bí mật nào; thiếu biến thì dừng trước khi gọi mạng.
+
 ```bash
 cd onchain/orilife_treasury && aiken check && aiken build
 cd ../.. && node onchain/scripts/lifecycle_emulator.mjs    # trọn vòng đời trên Emulator, không chạm mạng
