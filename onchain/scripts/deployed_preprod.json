@@ -50,9 +50,9 @@
   "vaultAddress": "addr_test1wpprkuz43k844dq53pcsw3hn29sjm34sq22rdl72cmk30jgjl9net",
   "vaultHash": "423b70558d8f5ab41488710746f351612dc6b0029436ffcac6ed17c9",
   "vaultNftUnit": "423b70558d8f5ab41488710746f351612dc6b0029436ffcac6ed17c96f72696c6966652d6665652d7661756c74",
-  "inboxAddress": "addr_test1wqg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdrdyzr",
-  "inboxHash": "11115e2eb62b7c4ada000da5d5c9a01d0cd4ec1d05e11abf7cbc20da",
-  "inboxRewardAddress": "stake_test17qg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdtnu4f",
+  "inboxAddress": "addr_test1wrkf4f90vhqyqkrmjqcterat8lcgfufuc2areae8n2c977cd78ur6",
+  "inboxHash": "ec9aa4af65c040587b9030bc8fab3ff084f13cc2ba3cf7279ab05f7b",
+  "inboxRewardAddress": "stake_test17rkf4f90vhqyqkrmjqcterat8lcgfufuc2areae8n2c977cdkey5s",
   "openTx": "236ab22960da754f9bfeb805d8dd53d0e3e025e42d01f03d29932cd24da803dc",
   "strayOpen": [
     {
@@ -74,5 +74,13 @@
       "openTx": "e629ec175a4fddb8561a12f37bad6d100a1b45820db569dfb2a860ac02932a9a",
       "note": "Instance THỪA, mở do lỗi kịch bản 2026-10-04: lần chạy 02 thứ nhất nộp tx rồi chết ở bước chờ xác nhận (provider Koios của lucid lỗi phân tích tx_info) trước khi ghi openTx; lần chạy lại thấy seed đã bị tiêu nên chọn seed mới và mở instance ở gốc tệp. Instance này CÒN MỞ: 5 tADA + NFT sổ ở địa chỉ kho, sổ 0/0; 2 tADA cọc đăng ký credential hộp thư không thu hồi được (mặt publish cấm huỷ đăng ký). KHÔNG dùng: phí phải vào hộp thư của instance ở gốc tệp. Đóng bằng 06 khi được duyệt (phải đưa bản ghi này về gốc tệp trước)."
     }
-  ]
+  ],
+  "previousInbox": [
+    {
+      "inboxAddress": "addr_test1wqg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdrdyzr",
+      "inboxHash": "11115e2eb62b7c4ada000da5d5c9a01d0cd4ec1d05e11abf7cbc20da",
+      "inboxRewardAddress": "stake_test17qg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdtnu4f"
+    }
+  ],
+  "inboxRegisterTx": "c3f9b06fc547211b720865ca6e0d7734716e6bb6eb5e592b05376ff6c01ebd5a"
 }
