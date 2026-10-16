@@ -93,7 +93,8 @@ already run on Preprod are in [`onchain/README.md`](onchain/README.md). CI check
 Until 2026-10-02 this repository also held a LAMP-denominated quote engine and a bridge into a
 LAMP Treasury custody contract on Preview. That code has been removed. The custody address it
 deployed still holds assets; where they are and how to reach the code that spends them is in
-[`docs/lamp-prototype.md`](docs/lamp-prototype.md). `OriLife-Specs/Fee/` (`FeeMechanism-*.md`)
-still describes that prototype, not MAGIC pricing.
+[`docs/lamp-prototype.md`](docs/lamp-prototype.md). `OriLife-Specs/Fee/FeeMechanism-*.md`
+(version in each file's header) describes the current MAGIC pricing model; the removed LAMP prototype
+is recorded in `docs/lamp-prototype.md`.
 
 Current state of each part: `STATUS.md`. Review history: `AUDIT.md`.
