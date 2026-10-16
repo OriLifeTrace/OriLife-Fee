@@ -53,15 +53,21 @@ jobs:
           if [ -d onchain/orilife_treasury ]; then echo "present=yes" >> "$GITHUB_OUTPUT";
           else echo "present=no" >> "$GITHUB_OUTPUT"; echo "No onchain/ on this branch — skipping."; fi
       # Pinned: the script hash depends on the compiler version. The blueprint currently in use was
-      # produced by Aiken v1.1.21 (read from the `preamble` of onchain/orilife_treasury/plutus.json).
+      # produced by Aiken v1.1.21+42babe5 (read from the `preamble` of onchain/orilife_treasury/plutus.json).
       # A gate on a floating compiler goes red or green according to something outside this repo.
+      #
+      # No download here. The Tiger runner's CPU (Xeon E5-2680 v3, Haswell) has no `adx`, and the
+      # prebuilt release binary (install.aiken-lang.org / aikup) loads, then dies with SIGILL (exit 132)
+      # as soon as it compiles the stdlib. The runner account carries aiken built from source at the
+      # pinned commit; this step only checks that it is there and is the pinned build.
       - if: steps.present.outputs.present == 'yes'
         run: |
-          curl -sSfL https://install.aiken-lang.org | bash
-          export PATH="$HOME/.aiken/bin:$PATH"
-          aikup install v1.1.21
-          aiken --version | grep -q 'v1.1.21' || { echo "Wrong aiken version pinned"; exit 1; }
-          echo "$HOME/.aiken/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          command -v aiken >/dev/null || { echo "::error::no aiken on the runner; expected v1.1.21+42babe5 built from source (cargo install --git https://github.com/aiken-lang/aiken --rev 42babe5 --locked aiken)"; exit 1; }
+          v=$(aiken --version)
+          echo "aiken: $(command -v aiken) -> $v"
+          case "$v" in *"v1.1.21+42babe5"*) ;; *) echo "::error::aiken on the runner is '$v', pinned v1.1.21+42babe5"; exit 1;; esac
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - if: steps.present.outputs.present == 'yes'
         working-directory: onchain/orilife_treasury
         run: aiken check
