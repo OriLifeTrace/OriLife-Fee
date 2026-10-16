@@ -28,7 +28,7 @@ jobs:
   # branch-protection context.
   core:
     name: Core (tsc + vitest)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, tiger, isolated]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,7 +45,7 @@ jobs:
   # directory is absent, so an old branch without it does not fail.
   onchain:
     name: Contracts (aiken check)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, tiger, isolated]
     steps:
       - uses: actions/checkout@v4
       - id: present
@@ -53,15 +53,24 @@ jobs:
           if [ -d onchain/orilife_treasury ]; then echo "present=yes" >> "$GITHUB_OUTPUT";
           else echo "present=no" >> "$GITHUB_OUTPUT"; echo "No onchain/ on this branch — skipping."; fi
       # Pinned: the script hash depends on the compiler version. The blueprint currently in use was
-      # produced by Aiken v1.1.21 (read from the `preamble` of onchain/orilife_treasury/plutus.json).
+      # produced by Aiken v1.1.21+42babe5 (read from the `preamble` of onchain/orilife_treasury/plutus.json).
       # A gate on a floating compiler goes red or green according to something outside this repo.
+      #
+      # No download here. The Tiger runner's CPU (Xeon E5-2680 v3, Haswell) has no `adx`, and the
+      # prebuilt release binary (install.aiken-lang.org / aikup) loads, then dies with SIGILL (exit 132)
+      # as soon as it compiles the stdlib. Tiger keeps a build from source at the pinned commit under
+      # /opt/aiken, owned by root. The step uses that absolute path, not anything in the runner's
+      # $HOME: the repo is public, a fork PR runs as the same runner account, and a binary it drops
+      # into ~/.cargo/bin would survive into the next run on main.
       - if: steps.present.outputs.present == 'yes'
         run: |
-          curl -sSfL https://install.aiken-lang.org | bash
-          export PATH="$HOME/.aiken/bin:$PATH"
-          aikup install v1.1.21
-          aiken --version | grep -q 'v1.1.21' || { echo "Wrong aiken version pinned"; exit 1; }
-          echo "$HOME/.aiken/bin" >> "$GITHUB_PATH"
+          d=/opt/aiken/1.1.21+42babe5/bin
+          [ -x "$d/aiken" ] || { echo "::error::no aiken at $d on this runner; expected v1.1.21+42babe5 built from source (cargo install --git https://github.com/aiken-lang/aiken --rev 42babe5 --locked aiken)"; exit 1; }
+          if [ -w "$d" ] || [ -w "$d/aiken" ]; then echo "::error::$d is writable by the runner account; a job could replace the compiler"; exit 1; fi
+          v=$("$d/aiken" --version)
+          echo "aiken: $d/aiken -> $v"
+          case "$v" in *"v1.1.21+42babe5"*) ;; *) echo "::error::aiken at $d is '$v', pinned v1.1.21+42babe5"; exit 1;; esac
+          echo "$d" >> "$GITHUB_PATH"
       - if: steps.present.outputs.present == 'yes'
         working-directory: onchain/orilife_treasury
         run: aiken check
