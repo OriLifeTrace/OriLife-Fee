@@ -10,7 +10,7 @@ carried both stale and never-true counts before (see "History").
 | Part | Where | State |
 |---|---|---|
 | MAGIC pricing, OriLife side | `src/`, `tests/` | parse `op_declaration`, quote against a PriceParam beacon datum, plan ConsumeMAGIC — pure code |
-| Fee vault + fee inbox + donation escrow | `onchain/` | tCARP prototype; ledger NFT, fee inbox and descending auction pass the Emulator lifecycle, not deployed |
+| Fee vault + fee inbox + donation escrow | `onchain/` | running on Preprod: the instance in `onchain/scripts/deployed_preprod.json` (`openTx`, `inboxRegisterTx` confirmed on Preprod, Koios `tx_status`, 2026-10-18); auction parameters are test values; nothing on Mainnet |
 | LAMP prototype | removed; record in `docs/lamp-prototype.md` | Preview custody address still holds assets |
 
 ## Checks — 2026-10-02
@@ -118,5 +118,3 @@ the whole suite run again; every one turned it red:
 - **2026-09-14**: this file said the CARP validator lived on an unmerged branch; it had been merged
   two commits later and the branch was deleted by 2026-09-21. For the current state, read the tree
   (`git ls-tree -r HEAD onchain/`), not a paragraph naming a branch.
-
-OriLife agent

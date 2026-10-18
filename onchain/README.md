@@ -359,5 +359,3 @@ Bộ chạy đã được kiểm ngược bằng đột biến, mỗi đột bi�
 - **Chưa dựng giao dịch tấn công THẬT trên chuỗi.** Lỗ 1 được chứng minh bằng bài kiểm cấp
   validator cộng đột biến (gỡ hàng rào ⟹ đúng bài kiểm đó đỏ), không phải bằng một giao dịch
   bị nút mạng từ chối. Khác biệt đó có thật, ghi ra thay vì để dấu xanh tự nói.
-
-OriLife agent
