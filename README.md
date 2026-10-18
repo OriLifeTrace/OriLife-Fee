@@ -79,12 +79,14 @@ npx vitest run
 
 This is what the CI gate runs (`.github/workflows/ci.yml`, job `core`).
 
-## Fee vault + donation escrow (`onchain/`, tCARP, Preprod)
+## Fee vault + donation escrow (`onchain/`, CARP, Preprod)
 
 This is a prototype of one specific guarantee: a fixed share of fee inflow must be paid to the
 Cardano treasury, and the contract, not an operating procedure, enforces it. It uses
-`treasury_donation`, a Conway-era transaction body field. Its unit is `tCARP`, a single-signature
-test token, because CARP has not been issued. The design, the invariants, and the transactions
+`treasury_donation`, a Conway-era transaction body field. The running Preprod instance holds the
+CARP token named at the root of `onchain/scripts/deployed_preprod.json` (`carpPolicy`, `carpName`);
+the closed instances under `closed` used `tCARP`, a single-signature test token. CARP has not been
+issued on Mainnet. The design, the invariants, and the transactions
 already run on Preprod are in [`onchain/README.md`](onchain/README.md). CI checks it with
 `aiken check` (job `onchain`).
 

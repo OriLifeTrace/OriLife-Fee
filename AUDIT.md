@@ -165,5 +165,3 @@ swapped for the Blockfrost provider and a real wallet.
   `orilife-core/MasterIdentify/core/animal_fee.py::TASK_CATALOG`.
 - **Risk**: the economic parameters here are simulation placeholders, to be set by the DAO later;
   and the absolute cap of 100 USD per task needs DAO confirmation per asset class.
-
-OriLife agent
