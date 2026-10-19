@@ -1,6 +1,6 @@
 # @orilife/fee
 
-**OriLife services are priced in MAGIC. Cardano network fees are paid in ADA.** This repository is
+**OriLife services are priced in MAGIC and paid in CARP. Cardano network fees are paid in ADA.** This repository is
 the OriLife side of that pricing: it reads the `op_declaration` that OriLife-Core attaches to every
 billable response, quotes it against MAGIC's price beacon, and plans the `ConsumeMAGIC`
 transactions the user has to sign. Building and signing those transactions is not done here: that
