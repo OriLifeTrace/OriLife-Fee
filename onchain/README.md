@@ -168,7 +168,7 @@ chữ ký. Người góp quỹ biến mất thì lời hứa vẫn chạy, chỉ
 | Nhánh | Ai gọi | Điều kiện |
 |---|---|---|
 | `Donate` | bất kỳ ai | `treasury_donation >= per_epoch`; epoch của cận dưới khoảng hiệu lực `> last_epoch`; cận trên cùng epoch; đúng một ô đi tiếp ở ĐÚNG địa chỉ ô vào, datum giống hệt trừ `last_epoch` = epoch hiện tại, giữ NFT, lovelace `>= vào − per_epoch` (quỹ mất tối đa `per_epoch` mỗi lượt); giao dịch có đúng một redeemer |
-| `Reclaim` | bất kỳ ai, KHÔNG cần chữ ký | epoch hiện tại `> last_epoch + idle_epochs` (ở chính epoch biên chỉ `Donate` đi được); NFT quỹ bị đốt cùng lượt; tổng lovelace ở các output có phần thanh toán = khoá `owner` `>=` lovelace của ô quỹ; giao dịch chỉ có redeemer tiêu + đốt của chính quỹ (không script Plutus nào khác — chặn một output trả `owner` thoả cho hai quỹ) |
+| `Reclaim` | bất kỳ ai, KHÔNG cần chữ ký | epoch hiện tại `> last_epoch + idle_epochs` (ở chính epoch biên chỉ `Donate` đi được; từ epoch kế, `Donate` vẫn hợp lệ — đua có chủ ý, không nhánh nào làm mất tiền); NFT quỹ bị đốt cùng lượt; ĐÚNG MỘT output ở địa chỉ `owner` không phần uỷ quyền, không datum, không script tham chiếu, lovelace `>=` của ô quỹ, token đúng bằng token ô vào mang (ô quỹ: không token nào vì NFT bị đốt; ô rác không NFT: trả lại đúng token nó mang) — người gọi không chọn được hình dạng: không gắn khoá staking lạ, không băm thành bụi, không nhét token rác vào ví chủ; giao dịch chỉ có redeemer tiêu + đốt của chính quỹ (không script Plutus nào khác — chặn một output trả `owner` thoả cho hai quỹ) |
 | đúc NFT | người mở quỹ | tiêu `seed`; ô quỹ ở địa chỉ gốc của script, chỉ ADA + NFT, `per_epoch > 0`, `0 < idle_epochs <= 73` (khoảng một năm), `owner` dài đúng 28 byte, `last_epoch` = epoch mở − 1, khoảng hiệu lực trọn trong một epoch |
 
 Bốn quyết định, lý do đầy đủ ở đầu `epoch_donation.ak`:
@@ -192,6 +192,10 @@ Bốn quyết định, lý do đầy đủ ở đầu `epoch_donation.ak`:
 Quỹ cạn: `Donate` luôn đòi một ô quỹ đi tiếp, và ô đó phải có min-ADA. Khi quỹ còn dưới
 `per_epoch` + min-ADA, người gọi phải tự bù phần thiếu (luật không cấm bơm thêm) — `08 donate`
 dừng và báo thay vì tự rút ví vận hành. Phần còn lại về chủ quỹ qua `Reclaim` sau `idle_epochs`.
+`08 open` từ chối `per_epoch` nhỏ hơn min-ADA của đầu ra giữ chỗ chỉ-ADA mà `donate` dựng (đo trên
+địa chỉ base, khoảng 0,97 tADA ở tham số hiện hành) — dưới mức đó quỹ mở được mà không bao giờ nộp
+được. `08 open` cũng hỏi chuỗi trước khi ghi đè tệp trạng thái: NFT quỹ cũ còn thì dừng. Mọi lệnh
+chờ xác nhận tối đa 10 phút (`AWAIT_TX_TIMEOUT_MS` trong `common.mjs`), quá thì ném lỗi.
 
 Giữ sống quỹ là hành vi đã chấp nhận: ai cũng nộp được `per_epoch` từ ví riêng mỗi epoch, nên
 `Reclaim` lùi mãi. Kẻ đó trả bằng tiền của mình đúng thứ quỹ hứa nộp; quỹ không mất gì.
@@ -225,7 +229,10 @@ một địa chỉ; địa chỉ chỉ có sau `open`. Bản này CHƯA từng c
 mở quỹ → nộp epoch N → nộp lần hai cùng epoch N (validator bác) → nộp epoch N+1 → người lạ thu
 hồi ở epoch N+1 (validator bác) → thu hồi ở epoch biên N+11 (validator bác) → người lạ thu hồi ở
 N+12, không chữ ký chủ (đối chứng; ví chủ
-nhận đúng 8 tADA, NFT bị đốt). Đo được: phase-two của validator trên giao dịch sắp nộp, gồm
+nhận đúng 8 tADA trong đúng một ô không datum, NFT bị đốt). Thêm các bước kịch bản tự bác trước khi
+dựng giao dịch: `open` với `per_epoch` dưới min-ADA của đầu ra giữ chỗ, `open` lần hai khi quỹ cũ
+còn trên chuỗi, và `donate` khi quỹ còn ít hơn `per_epoch` ("quỹ cạn"); cùng bước `open` lại thành
+công sau khi quỹ cũ đã bị người lạ thu hồi (tệp trạng thái không có `reclaimTx`). Đo được: phase-two của validator trên giao dịch sắp nộp, gồm
 `treasury_donation` đọc từ thân giao dịch; ExUnits thật. KHÔNG đo được: sổ cái giả không áp
 `treasury_donation` và không kiểm cân bằng giá trị, và lịch đọc từ Blockfrost không chạy.
 
@@ -233,11 +240,11 @@ ExUnits đo trên Emulator ngày 2026-10-29 (phase-two, giao dịch thật sắp
 
 | Bước | Redeemer | mem | steps |
 |---|---|---|---|
-| open | Mint | 144 174 | 49 669 767 |
-| donate epoch N | Spend | 214 104 | 78 723 703 |
-| donate epoch N+1 | Spend | 210 210 | 76 146 226 |
-| reclaim | Spend | 175 122 | 59 086 770 |
-| reclaim | Mint | 30 796 | 8 380 486 |
+| open | Mint | 144 374 | 49 701 767 |
+| donate epoch N | Spend | 214 304 | 78 755 703 |
+| donate epoch N+1 | Spend | 210 410 | 76 178 226 |
+| reclaim | Spend | 191 275 | 66 844 863 |
+| reclaim | Mint | 31 196 | 8 444 486 |
 
 ## Bốn lỗ đã vá — đọc trước khi sửa validator
 

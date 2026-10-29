@@ -8,8 +8,11 @@
 ////   · `Reclaim` — ai cũng gọi, KHÔNG cần chữ ký, CHỈ khi quỹ đã nằm yên ĐỦ `idle_epochs` epoch
 ////     TRỌN không ai nộp: epoch hiện tại `> last_epoch + idle_epochs` (luật "không khoá ADA vĩnh
 ////     viễn": mất khoá chủ quỹ không được khoá ADA mãi). Dấu `>` chặt: ở epoch
-////     `last_epoch + idle_epochs` chỉ `Donate` hợp lệ, không có epoch nào hai nhánh cùng đi được
-////     (không đua). Toàn bộ lovelace về địa chỉ khoá bởi `owner`; NFT quỹ phải bị đốt cùng lượt.
+////     `last_epoch + idle_epochs` chỉ `Donate` hợp lệ. TỪ epoch kế đó trở đi HAI nhánh cùng hợp
+////     lệ — `Donate` không có cận trên. Đua đó là có chủ ý: ai nộp trước thì quỹ sống thêm (tiền
+////     vào kho bạc), ai thu hồi trước thì tiền về `owner`; không nhánh nào làm mất tiền. Toàn bộ
+////     lovelace về ĐÚNG MỘT đầu ra ở địa chỉ `owner` không phần uỷ quyền, không datum, không
+////     script tham chiếu (người gọi không chọn được hình dạng đầu ra); NFT quỹ đốt cùng lượt.
 ////
 //// Ô ở địa chỉ quỹ KHÔNG mang NFT và có datum không đọc được thành `EpochDonationDatum` (không
 //// datum, datum sai kiểu): ai cũng tiêu được, tự do — không ai nhận ra chủ của nó, và khoá nó lại
@@ -74,8 +77,8 @@ use cardano/assets.{
   quantity_of, tokens, without_lovelace,
 }
 use cardano/transaction.{
-  Datum, InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
-  ScriptPurpose, Spend, Transaction, find_input, placeholder,
+  Datum, DatumHash, InlineDatum, Input, Mint, NoDatum, Output, OutputReference,
+  Redeemer, ScriptPurpose, Spend, Transaction, find_input, placeholder,
 }
 
 /// Tên NFT quỹ. Chính sách = băm validator này, nên tên chỉ cần phân biệt trong nội bộ.
@@ -211,25 +214,25 @@ validator epoch_donation(
           }
 
           Reclaim -> {
-            // Lovelace trả về `owner`: cộng MỌI output có phần thanh toán là khoá `owner` (phần uỷ
-            // quyền tuỳ ý). Người nộp giao dịch trả phí từ input của mình, nên `owner` nhận đủ.
-            let paid_to_owner =
-              list.foldl(
+            // Người gọi không cần chữ ký, nên KHÔNG được chọn hình dạng tiền trả về: đúng MỘT output
+            // ở địa chỉ `owner` không phần uỷ quyền (khoá staking lạ sẽ hút phần thưởng ủy thác của
+            // tiền chủ), không datum (DatumHash không ai biết tiền ảnh = khó tiêu bằng ví thường),
+            // không script tham chiếu (đội min-ADA, nhét rác), một ô (không băm thành bụi). Người
+            // nộp giao dịch trả phí từ input của mình, nên `owner` nhận đủ.
+            let owner_address = Address(VerificationKey(fund.owner), None)
+            // MUT:R_ONE_PAYOUT
+            expect [payout] =
+              list.filter(
                 tx.outputs,
-                0,
-                fn(output, total) {
-                  if output.address.payment_credential == VerificationKey(
-                    fund.owner,
-                  ) {
-                    total + lovelace_of(output.value)
-                  } else {
-                    total
-                  }
+                fn(output) {
+                  // MUT:R_EXACT_ADDRESS
+                  output.address == owner_address
                 },
               )
             // Ô quỹ thật: một redeemer tiêu + một redeemer đốt. Ô rác: chỉ redeemer tiêu. Không
-            // script Plutus nào khác trong giao dịch ⟹ một output trả `owner` không thoả được cho
-            // hai ô (double satisfaction giữa hai quỹ cùng `owner`).
+            // script Plutus nào khác trong giao dịch ⟹ output trả `owner` không thoả được cho hai
+            // ô (double satisfaction giữa hai quỹ cùng `owner`) — câu "đúng một output" ở trên một
+            // mình KHÔNG chặn được điều đó, câu này chặn.
             let script_count =
               if has_nft {
                 2
@@ -240,7 +243,20 @@ validator epoch_donation(
               // MUT:R_ONE_SCRIPT
               list.length(tx.redeemers) == script_count,
               // MUT:R_PAID
-              paid_to_owner >= lovelace_of(own_input.output.value),
+              lovelace_of(payout.value) >= lovelace_of(own_input.output.value),
+              // MUT:R_NO_DATUM
+              payout.datum == NoDatum,
+              // MUT:R_NO_REF_SCRIPT
+              payout.reference_script == None,
+              // Token: ô quỹ chỉ mang NFT và NFT bị đốt ⟹ không token nào; ô rác trả đúng token nó
+              // đang mang. Người gọi không được nhét token rác (đội min-ADA, bẩn ví chủ), cũng
+              // không được rút token của ô rác sang output khác.
+              // MUT:R_NO_JUNK
+              without_lovelace(payout.value) == if has_nft {
+                assets.zero
+              } else {
+                without_lovelace(own_input.output.value)
+              },
               // Ô rác (không NFT) do người gửi tự đặt `owner`: chỉ trả được về đúng `owner` đó.
               // Ô quỹ thật thì phải nằm yên đủ lâu, và NFT phải bị đốt — NFT sống sót qua `Reclaim`
               // là NFT đi được tới một ô quỹ giả mang datum tuỳ ý.
@@ -814,20 +830,157 @@ test reclaim_fails_when_the_owner_gets_one_lovelace_short() fail {
   )
 }
 
-/// Phần uỷ quyền của địa chỉ nhận không quan trọng: chỉ phần thanh toán phải là `owner`.
-test reclaim_passes_to_an_owner_address_with_any_stake_key() {
+// Hình dạng output trả `owner`: người gọi không ký nên không được chọn. Mỗi bài âm chỉ lệch
+// ĐÚNG một chỗ so với `wallet(owner_key, 10 ADA)` của bài dương.
+
+fn reclaim_paying(outputs: List<Output>) -> Bool {
   run_reclaim_with(
-    [
-      wallet(owner_key, 10 * one_ada)
-        |> fn(o) {
-            Output { ..o, address: o.address |> with_delegation_key(stranger) }
-          },
-    ],
+    outputs,
     -1,
     window_in(t_epoch + 11),
     True,
     [own_redeemer(Reclaim), mint_redeemer()],
   )
+}
+
+/// Người gọi bù thêm và nhận tiền thừa ở ví mình: output khác không bị cấm.
+test reclaim_passes_with_the_callers_change_beside_the_payout() {
+  reclaim_paying(
+    [wallet(stranger, 3 * one_ada), wallet(owner_key, 11 * one_ada)],
+  )
+}
+
+/// Khoá staking lạ trên tiền của chủ: kẻ gọi hút phần thưởng uỷ thác.
+test reclaim_fails_to_an_owner_address_with_a_stranger_stake_key() fail {
+  reclaim_paying(
+    [
+      Output {
+        ..wallet(owner_key, 10 * one_ada),
+        address: address.from_verification_key(owner_key)
+          |> with_delegation_key(stranger),
+      },
+    ],
+  )
+}
+
+/// Khoá staking của CHÍNH chủ cũng bị bác: validator không biết khoá staking nào là của chủ.
+test reclaim_fails_to_an_owner_address_with_the_owners_own_stake_key() fail {
+  reclaim_paying(
+    [
+      Output {
+        ..wallet(owner_key, 10 * one_ada),
+        address: address.from_verification_key(owner_key)
+          |> with_delegation_key(owner_key),
+      },
+    ],
+  )
+}
+
+test reclaim_fails_when_the_payout_carries_a_datum_hash() fail {
+  reclaim_paying(
+    [
+      Output {
+        ..wallet(owner_key, 10 * one_ada),
+        datum: DatumHash(
+          #"dadadadadadadadadadadadadadadadadadadadadadadadadadadadadadadada",
+        ),
+      },
+    ],
+  )
+}
+
+test reclaim_fails_when_the_payout_carries_an_inline_datum() fail {
+  let junk: Data = 42
+  reclaim_paying(
+    [Output { ..wallet(owner_key, 10 * one_ada), datum: InlineDatum(junk) }],
+  )
+}
+
+test reclaim_fails_when_the_payout_carries_a_reference_script() fail {
+  reclaim_paying(
+    [
+      Output {
+        ..wallet(owner_key, 10 * one_ada),
+        reference_script: Some(other_fund_hash),
+      },
+    ],
+  )
+}
+
+fn junk_token() -> Value {
+  from_asset(other_fund_hash, "junk", 1)
+}
+
+test reclaim_fails_when_the_payout_carries_a_junk_token() fail {
+  reclaim_paying(
+    [
+      Output {
+        ..wallet(owner_key, 10 * one_ada),
+        value: add(junk_token(), "", "", 10 * one_ada),
+      },
+    ],
+  )
+}
+
+/// Ô rác mang datum quỹ (người gửi tự đặt `owner`) và một token: token đi cùng tiền về `owner`.
+fn reclaim_stray_with_token(outputs: List<Output>) -> Bool {
+  let datum = fund_datum(t_epoch)
+  let input =
+    Output {
+      ..fund_output(10 * one_ada, datum),
+      value: add(junk_token(), "", "", 10 * one_ada),
+    }
+  epoch_donation.spend(
+    t_seed,
+    t_zero,
+    t_length,
+    some_data(datum),
+    Reclaim,
+    fund_ref(),
+    reclaim_tx(
+      input,
+      outputs,
+      0,
+      window_in(t_epoch + 11),
+      [own_redeemer(Reclaim)],
+    ),
+  )
+}
+
+test stray_reclaim_passes_with_its_token_paid_to_the_owner() {
+  reclaim_stray_with_token(
+    [
+      Output {
+        ..wallet(owner_key, 10 * one_ada),
+        value: add(junk_token(), "", "", 10 * one_ada),
+      },
+    ],
+  )
+}
+
+test stray_reclaim_fails_when_its_token_goes_elsewhere() fail {
+  reclaim_stray_with_token(
+    [
+      wallet(owner_key, 10 * one_ada),
+      Output {
+        ..wallet(stranger, 2 * one_ada),
+        value: add(junk_token(), "", "", 2 * one_ada),
+      },
+    ],
+  )
+}
+
+/// Băm thành hai ô, tổng vẫn đủ.
+test reclaim_fails_when_the_payout_is_split_in_two() fail {
+  reclaim_paying(
+    [wallet(owner_key, 5 * one_ada), wallet(owner_key, 5 * one_ada)],
+  )
+}
+
+/// Một ô đủ tiền, thêm một ô bụi cùng địa chỉ: vẫn bị bác — chỉ câu "đúng một" chặn được bài
+/// này (ô đầu đã đủ lovelace, đúng địa chỉ, không datum, không script).
+test reclaim_fails_with_a_full_payout_plus_a_dust_output_to_the_owner() fail {
+  reclaim_paying([wallet(owner_key, 10 * one_ada), wallet(owner_key, one_ada)])
 }
 
 /// Hai quỹ cùng `owner` tiêu chung một giao dịch: một output 10 ADA không được thoả cho cả hai.
@@ -1108,7 +1261,8 @@ test reclaim_passes_with_idle_one_in_the_epoch_after_opening() {
 }
 
 /// PoC `poc_donate_also_valid_in_reclaim_epoch`: ở epoch `last_epoch + idle_epochs` `Donate` vẫn
-/// đi — và `Reclaim` thì bị bác (`reclaim_fails_one_epoch_early`), nên hết đua.
+/// đi — và `Reclaim` thì bị bác (`reclaim_fails_one_epoch_early`): ở epoch biên không đua. Từ
+/// epoch kế trở đi hai nhánh cùng hợp lệ — đua có chủ ý, xem đầu tệp.
 test donate_passes_in_the_epoch_reclaim_is_still_refused() {
   let datum = fund_datum(t_epoch)
   let input = fund_output(10 * one_ada, datum)

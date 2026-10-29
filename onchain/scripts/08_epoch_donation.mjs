@@ -154,15 +154,70 @@ async function findFund(lucid, fund) {
   return { utxo: held[0], datum: Data.from(held[0].datum, EpochDonationDatum), strays: at.length - 1 };
 }
 
+/// Tệp trạng thái đã trỏ tới một quỹ (có `address`/`seed`) thì hỏi CHUỖI trước khi chọn seed mới
+/// và ghi đè: mất seed + lịch là mất đường dựng lại script của quỹ cũ. Không dựa vào `reclaimTx`
+/// — `Reclaim` không cần chữ ký, người lạ thu hồi thì tệp này không bao giờ biết.
+async function refuseIfPriorFundMayBeAlive(lucid, prior) {
+  if (!prior.address && !prior.seed) return;
+  if (!prior.address || !prior.nftUnit || !prior.seed) {
+    throw new Error(
+      `tệp trạng thái ${stateFile()} có quỹ cũ nhưng thiếu address/nftUnit/seed — không kiểm được nó trên chuỗi, dừng`,
+    );
+  }
+  const held = (await lucid.utxosAt(prior.address)).filter((u) => (u.assets[prior.nftUnit] ?? 0n) > 0n);
+  if (held.length > 0) {
+    throw new Error(
+      `quỹ cũ còn trên chuỗi (${held[0].txHash}#${held[0].outputIndex} ở ${prior.address}) — ` +
+      `không mở quỹ mới đè lên tệp trạng thái ${stateFile()}`,
+    );
+  }
+  if (!prior.openTx) {
+    // Seed đã ghi mà chưa ghi giao dịch mở: lần `open` trước có thể đã nộp và đang chờ vào khối.
+    const seedLeft = await lucid.utxosByOutRef([prior.seed]);
+    if (seedLeft.length === 0) {
+      throw new Error(
+        `seed cũ ${prior.seed.txHash}#${prior.seed.outputIndex} đã bị tiêu nhưng chưa thấy NFT quỹ ở ` +
+        `${prior.address} — giao dịch mở cũ có thể đang chờ vào khối. Chờ rồi chạy lại; chắc chắn seed ` +
+        `bị tiêu vào việc khác thì tự gỡ address/seed khỏi tệp trạng thái`,
+      );
+    }
+  }
+}
+
+/// Min-ADA của đầu ra giữ chỗ chỉ-ADA mà `donate` dựng, đo trên địa chỉ base (khoá + staking).
+function minAdaOfPlaceholder(lucid, keyHash) {
+  const cred = CML.Credential.new_pub_key(CML.Ed25519KeyHash.from_hex(keyHash));
+  const networkId = lucid.config().network === "Mainnet" ? 1 : 0;
+  const output = CML.TransactionOutputBuilder.new()
+    .with_address(CML.BaseAddress.new(networkId, cred, cred).to_address())
+    .next()
+    .with_value(CML.Value.from_coin(1n))
+    .build()
+    .output();
+  return CML.min_ada_required(output, BigInt(lucid.config().protocolParameters.coinsPerUtxoByte));
+}
+
 // ── Lệnh con ─────────────────────────────────────────────────────────────────
 
 export async function open({ fundLovelace = DEFAULT_FUND, perEpoch = DEFAULT_PER_EPOCH, idleEpochs = DEFAULT_IDLE_EPOCHS } = {}) {
   const prior = readState();
-  if (prior.openTx && !prior.reclaimTx) throw new Error(`đã có quỹ mở ở ${prior.openTx} (${prior.address})`);
   if (perEpoch <= 0n || idleEpochs <= 0n) throw new Error("per_epoch và idle_epochs phải lớn hơn 0");
 
   const lucid = await connect();
   const walletAddress = await lucid.wallet().address();
+  await refuseIfPriorFundMayBeAlive(lucid, prior);
+
+  // `donate` cân đối giao dịch bằng một đầu ra GIỮ CHỖ chỉ-ADA đúng `per_epoch` ở ví người nộp,
+  // và sổ cái đòi đầu ra đó có min-ADA. `per_epoch` dưới mức đó thì quỹ mở được nhưng không bao
+  // giờ nộp được. Đo trên địa chỉ base (khoá + staking) — dạng địa chỉ ví thường dài nhất — vì
+  // người nộp là bất kỳ ai, không chỉ ví đang mở quỹ.
+  const placeholderMinAda = minAdaOfPlaceholder(lucid, keyHashOf(walletAddress));
+  if (perEpoch < placeholderMinAda) {
+    throw new Error(
+      `per_epoch ${perEpoch} lovelace nhỏ hơn min-ADA ${placeholderMinAda} của đầu ra giữ chỗ mà ` +
+      `'donate' phải dựng — quỹ sẽ mở được nhưng không bao giờ nộp được. Chọn per_epoch >= ${placeholderMinAda}`,
+    );
+  }
   const schedule = await epochSchedule();
   const win = windowInCurrentEpoch(schedule);
 
@@ -222,6 +277,13 @@ export async function donate({ skipLocalChecks = false } = {}) {
   const { utxo: fundUtxo, datum, strays } = await findFund(lucid, fund);
   const win = windowInCurrentEpoch(schedule);
   const donation = datum.per_epoch;
+  if (fundUtxo.assets.lovelace < donation) {
+    // Không chặn được bằng `skipLocalChecks`: lượng âm không dựng thành đầu ra được.
+    throw new Error(
+      `quỹ cạn: còn ${fundUtxo.assets.lovelace} lovelace < per_epoch ${donation}. Quỹ không tự nộp ` +
+      `được nữa; chủ quỹ thu hồi bằng 'reclaim' sau ${datum.idle_epochs} epoch nằm yên`,
+    );
+  }
   const nextLovelace = fundUtxo.assets.lovelace - donation;
 
   console.log("epoch       ", win.epoch, "— nộp lần cuối ở epoch", datum.last_epoch, `(${strays} ô khác ở địa chỉ quỹ, bỏ qua)`);
@@ -362,9 +424,17 @@ export async function reclaim() {
   const lucid = await connect();
   const { utxo: fundUtxo, datum } = await findFund(lucid, fund);
   const win = windowInCurrentEpoch(schedule);
-  // Không cần chữ ký: ai cũng nộp được, ví đang chọn chỉ trả phí. Toàn bộ lovelace quỹ về địa chỉ
-  // khoá bởi `owner` (không phần uỷ quyền) — validator đếm theo phần thanh toán.
+  // Không cần chữ ký: ai cũng nộp được, ví đang chọn chỉ trả phí. Toàn bộ lovelace quỹ về ĐÚNG MỘT
+  // đầu ra ở địa chỉ khoá bởi `owner`, không phần uỷ quyền, không datum, không script tham chiếu —
+  // validator đòi đúng hình dạng đó (`epoch_donation.ak` nhánh `Reclaim`).
   const ownerAddress = credentialToAddress(lucid.config().network, { type: "Key", hash: datum.owner });
+  if ((await lucid.wallet().address()) === ownerAddress) {
+    // Tiền thừa của ví sẽ thành ô THỨ HAI ở đúng địa chỉ đó và validator bác giao dịch.
+    throw new Error(
+      `ví nộp có địa chỉ trùng địa chỉ nhận ${ownerAddress}: tiền thừa sẽ thành đầu ra thứ hai ở đó ` +
+      `và validator bác — nộp 'reclaim' bằng một ví khác (ai cũng nộp được, không cần chữ ký chủ)`,
+    );
+  }
   console.log("epoch       ", win.epoch, "— thu hồi được từ epoch", datum.last_epoch + datum.idle_epochs + 1n);
   console.log("trả về      ", fundUtxo.assets.lovelace, "lovelace →", ownerAddress);
 

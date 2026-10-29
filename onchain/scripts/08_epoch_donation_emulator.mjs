@@ -16,7 +16,7 @@
 // không kiểm cân bằng giá trị, nên "vào = ra + phí + nộp" chỉ được kiểm ở Preprod; lịch epoch ở đây
 // là lịch giả, công thức đọc lịch từ Blockfrost (`epochSchedule`) không chạy.
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as CML from "@anastasia-labs/cardano-multiplatform-lib-nodejs";
@@ -56,6 +56,9 @@ const BLOCKS_PER_EPOCH = SCHEDULE.lengthMs / 1000 / 20;
 const { open, donate, reclaim, buildFund, epochAt } = await import("./08_epoch_donation.mjs");
 const { readFileSync } = await import("node:fs");
 const st = () => JSON.parse(readFileSync(process.env.ORILIFE_EPOCH_DONATION_STATE_FILE, "utf8"));
+const saveStateRaw = (patch) => writeFileSync(
+  process.env.ORILIFE_EPOCH_DONATION_STATE_FILE, JSON.stringify({ ...st(), ...patch }, null, 2) + "\n",
+);
 
 // ── Phase-two trước khi vào sổ (Emulator không tự chạy validator) ────────────
 const costModels = createCostModels(emulator.protocolParameters.costModels).to_cbor_bytes();
@@ -148,6 +151,18 @@ async function expectRejected(label, fn, pattern) {
   const after = await fundState();
   check(after.ref === before.ref, `${label}: ô quỹ không đổi (${after.ref})`);
 }
+/// Bước kịch bản PHẢI tự bác trước khi dựng giao dịch: lỗi khớp `pattern`, tệp trạng thái không đổi.
+async function expectScriptRefusal(label, fn, pattern) {
+  currentStep = label;
+  const before = readFileSync(process.env.ORILIFE_EPOCH_DONATION_STATE_FILE, "utf8");
+  let error = null;
+  try { await fn(); } catch (e) { error = e; }
+  check(error !== null, `${label}: bị từ chối`);
+  const msg = String(error?.message ?? error);
+  console.log(`    lỗi: ${msg.split("\n")[0].slice(0, 220)}`);
+  check(pattern.test(msg), `${label}: đúng lý do (${pattern})`);
+  check(readFileSync(process.env.ORILIFE_EPOCH_DONATION_STATE_FILE, "utf8") === before, `${label}: tệp trạng thái không đổi`);
+}
 const nextEpochStartBlocks = () => {
   const msLeft = SCHEDULE.zeroMs + (epochNow() + 1) * SCHEDULE.lengthMs - emulator.now();
   return Math.ceil(msLeft / 20_000) + 3; // +3 khối = 60 s vào epoch mới, quá CLOCK_SLACK_MS
@@ -156,9 +171,15 @@ const nextEpochStartBlocks = () => {
 console.log("lịch epoch giả", SCHEDULE, "— epoch hiện tại", epochNow());
 emulator.awaitBlock(5);
 
+console.log("\n━━ open với per_epoch dưới min-ADA của đầu ra giữ chỗ ━━");
+writeFileSync(process.env.ORILIFE_EPOCH_DONATION_STATE_FILE, "{}\n");
+await expectScriptRefusal("open per_epoch 0.5 tADA", () => open({ perEpoch: 500_000n }), /min-ADA/);
+
 currentStep = "open";
 console.log("\n━━ open ━━");
 await open();
+console.log("\n━━ open lần hai khi quỹ cũ còn sống ━━");
+await expectScriptRefusal("open đè quỹ còn sống", () => open(), /quỹ cũ còn trên chuỗi/);
 const N = st().openedEpoch;
 {
   const f = await fundState();
@@ -221,8 +242,22 @@ const reclaimTx = await reclaim();
   check(ownerAfter - ownerBefore === 8_000_000n, `ví chủ quỹ nhận đúng 8 tADA (${ownerAfter - ownerBefore})`);
   const all = [...(await lucid.utxosAt(account.address)), ...(await lucid.utxosAt(stranger.address))];
   check(!all.some((u) => (u.assets[fund.unit] ?? 0n) > 0n), "NFT quỹ đã bị đốt, không nằm trong ví nào");
+  const payouts = await lucid.utxosAt(ownerAddress);
+  check(payouts.length === 1, `đúng một ô ở địa chỉ chủ không phần uỷ quyền (đếm ${payouts.length})`);
+  check(!payouts[0].datum && !payouts[0].datumHash && !payouts[0].scriptRef, "ô trả chủ không datum, không script tham chiếu");
   check(typeof reclaimTx === "string", `tx ${reclaimTx}`);
 }
+
+// Quỹ cũ đã bị NGƯỜI LẠ thu hồi (tệp trạng thái của chủ không có `reclaimTx` nếu người lạ chạy
+// từ máy khác): `open` hỏi chuỗi, không thấy NFT ⟹ cho mở quỹ mới.
+currentStep = "open sau thu hồi";
+console.log(`\n━━ open lại sau thu hồi, quỹ nhỏ hơn per_epoch (epoch ${epochNow()}) ━━`);
+saveStateRaw({ reclaimTx: undefined });
+emulator.awaitBlock(1);
+await open({ fundLovelace: 1_500_000n, perEpoch: 2_000_000n });
+check(st().openedEpoch === epochNow(), "mở được quỹ mới khi quỹ cũ không còn trên chuỗi");
+emulator.awaitBlock(1);
+await expectScriptRefusal("donate khi quỹ < per_epoch", () => donate({ skipLocalChecks: true }), /quỹ cạn/);
 
 console.log("\nExUnits đo được (phase-two, trên giao dịch thật sắp nộp):");
 for (const b of budgets) console.log(`  ${b.step.padEnd(20)} ${b.redeemer.padEnd(8)} mem ${b.mem}  steps ${b.steps}`);
