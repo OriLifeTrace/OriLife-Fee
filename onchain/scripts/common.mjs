@@ -255,9 +255,29 @@ export function explorer(txHash) {
   return `https://preprod.cardanoscan.io/transaction/${txHash}`;
 }
 
-export async function awaitTx(lucid, txHash, label) {
+/// Trần chờ một giao dịch vào khối. `lucid.awaitTx` tự nó hỏi mãi không dừng; quá trần thì ném
+/// lỗi thay vì treo kịch bản. 10 phút ≈ 30 khối Preprod — giao dịch đã vào mempool mà chưa vào khối
+/// sau ngần ấy là chuyện bất thường cần người xem.
+export const AWAIT_TX_TIMEOUT_MS = 600_000;
+
+export async function awaitTx(lucid, txHash, label, timeoutMs = AWAIT_TX_TIMEOUT_MS) {
   process.stdout.write(`  ${label} chờ xác nhận `);
-  const ok = await lucid.awaitTx(txHash);
-  console.log(ok ? "xong" : "KHÔNG XÁC NHẬN ĐƯỢC");
-  return ok;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} ${txHash} chưa vào khối sau ${timeoutMs / 1000} s — dừng; xem lại trên ${explorer(txHash)}`)),
+      timeoutMs,
+    );
+  });
+  try {
+    const ok = await Promise.race([lucid.awaitTx(txHash), timeout]);
+    if (ok !== true) throw new Error(`${label} ${txHash}: awaitTx trả ${JSON.stringify(ok)}, không xác nhận được`);
+    console.log("xong");
+    return true;
+  } catch (e) {
+    console.log("THẤT BẠI");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }

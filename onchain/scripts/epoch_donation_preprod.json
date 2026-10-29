@@ -1,0 +1,17 @@
+{
+  "network": "Preprod",
+  "seed": {
+    "txHash": "7f13aab3e020d4c9cd296b0afec0c6e8ba38a4d9d0523e00a8281ef254fd249e",
+    "outputIndex": 3
+  },
+  "zeroMs": 1654041600000,
+  "lengthMs": 432000000,
+  "address": "addr_test1wpjn5fmw0vpp3078kyxwnep528cf2zvypafu0mnj59xlxrczf07k5",
+  "scriptHash": "653a276e7b0218bfc7b10ce9e43451f09509840f53c7ee72a14df30f",
+  "nftUnit": "653a276e7b0218bfc7b10ce9e43451f09509840f53c7ee72a14df30f65706f63682d646f6e6174696f6e",
+  "owner": "d2ef920cf7e13a53175c97d3d50e24f645922d8a318252304df06834",
+  "openTx": "9a0016db50d541f31f019d960fb69ee68fba981d464c1bab4b26f2a9e039aa79",
+  "openedEpoch": 322,
+  "lastDonateTx": "571f38cb6f590d0a318b0bacbeade934852243a3dd8247ef513d39fbebab5c9a",
+  "lastDonatedEpoch": 322
+}
