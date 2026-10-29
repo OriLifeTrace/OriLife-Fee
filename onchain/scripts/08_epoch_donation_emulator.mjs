@@ -196,13 +196,18 @@ console.log(`\n━━ donate (epoch N+1 = ${epochNow()}) ━━`);
 
 // Từ đây ví nộp là NGƯỜI LẠ, không phải chủ quỹ: `reclaim` không ký bằng khoá `owner`.
 lucid.selectWallet.fromSeed(stranger.seedPhrase);
-console.log(`\n━━ reclaim sớm, người lạ nộp (epoch ${epochNow()}, mở từ epoch ${N + 1 + 10}) ━━`);
+console.log(`\n━━ reclaim sớm, người lạ nộp (epoch ${epochNow()}, mở từ epoch ${N + 1 + 10 + 1}) ━━`);
 await expectRejected("reclaim sớm", () => reclaim(), /failed script execution|Spend\[|validator|script|EvaluateTransaction|eval/i);
 
 // Đối chứng cùng bộ dựng: đủ 10 epoch nằm yên thì thu hồi được — để chắc lần bác ở trên là vì
 // luật nằm yên, không vì bộ dựng `reclaim` hỏng.
 for (let i = 0; i < 10; i++) emulator.awaitBlock(nextEpochStartBlocks());
-check(epochNow() === N + 11, `đồng hồ sang epoch N+1+10 = ${N + 11}`);
+check(epochNow() === N + 11, `đồng hồ sang epoch last_epoch + idle = N+1+10 = ${N + 11}`);
+// Epoch biên `last_epoch + idle_epochs`: mới có 9 epoch trọn nằm yên — validator bác (dấu `>`).
+console.log(`\n━━ reclaim ở epoch biên last_epoch + idle (epoch ${epochNow()}) ━━`);
+await expectRejected("reclaim ở epoch biên", () => reclaim(), /failed script execution|Spend\[|validator|script|EvaluateTransaction|eval/i);
+emulator.awaitBlock(nextEpochStartBlocks());
+check(epochNow() === N + 12, `đồng hồ sang epoch N+1+10+1 = ${N + 12}`);
 currentStep = "reclaim đủ hạn";
 console.log(`\n━━ reclaim, người lạ nộp, không chữ ký chủ (epoch ${epochNow()}) ━━`);
 // `owner` là băm khoá ví chủ; đích trả là địa chỉ chỉ-khoá-thanh-toán của băm đó.

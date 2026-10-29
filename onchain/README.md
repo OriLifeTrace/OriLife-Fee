@@ -168,8 +168,8 @@ chữ ký. Người góp quỹ biến mất thì lời hứa vẫn chạy, chỉ
 | Nhánh | Ai gọi | Điều kiện |
 |---|---|---|
 | `Donate` | bất kỳ ai | `treasury_donation >= per_epoch`; epoch của cận dưới khoảng hiệu lực `> last_epoch`; cận trên cùng epoch; đúng một ô đi tiếp ở ĐÚNG địa chỉ ô vào, datum giống hệt trừ `last_epoch` = epoch hiện tại, giữ NFT, lovelace `>= vào − per_epoch` (quỹ mất tối đa `per_epoch` mỗi lượt); giao dịch có đúng một redeemer |
-| `Reclaim` | bất kỳ ai, KHÔNG cần chữ ký | epoch hiện tại `>= last_epoch + idle_epochs`; NFT quỹ bị đốt cùng lượt; tổng lovelace ở các output có phần thanh toán = khoá `owner` `>=` lovelace của ô quỹ; giao dịch chỉ có redeemer tiêu + đốt của chính quỹ (không script Plutus nào khác — chặn một output trả `owner` thoả cho hai quỹ) |
-| đúc NFT | người mở quỹ | tiêu `seed`; ô quỹ ở địa chỉ gốc của script, chỉ ADA + NFT, `per_epoch > 0`, `idle_epochs > 0`, `last_epoch` = epoch mở − 1, khoảng hiệu lực trọn trong một epoch |
+| `Reclaim` | bất kỳ ai, KHÔNG cần chữ ký | epoch hiện tại `> last_epoch + idle_epochs` (ở chính epoch biên chỉ `Donate` đi được); NFT quỹ bị đốt cùng lượt; tổng lovelace ở các output có phần thanh toán = khoá `owner` `>=` lovelace của ô quỹ; giao dịch chỉ có redeemer tiêu + đốt của chính quỹ (không script Plutus nào khác — chặn một output trả `owner` thoả cho hai quỹ) |
+| đúc NFT | người mở quỹ | tiêu `seed`; ô quỹ ở địa chỉ gốc của script, chỉ ADA + NFT, `per_epoch > 0`, `0 < idle_epochs <= 73` (khoảng một năm), `owner` dài đúng 28 byte, `last_epoch` = epoch mở − 1, khoảng hiệu lực trọn trong một epoch |
 
 Bốn quyết định, lý do đầy đủ ở đầu `epoch_donation.ak`:
 
@@ -180,8 +180,10 @@ Bốn quyết định, lý do đầy đủ ở đầu `epoch_donation.ak`:
   `1793145600` s = mốc 0 + 322 × 432 000 s).
 - **NFT trạng thái đúc một lần từ `seed`**, chính sách = băm chính validator. Địa chỉ quỹ ai cũng
   gửi vào được kèm datum tự đặt; chỉ "ô giữ NFT" là quỹ thật, và datum của nó đã được kiểm lúc
-  đúc. `Donate` không đụng ô không NFT. Ô rác không NFT thì ai cũng `Reclaim` được bất cứ lúc nào,
-  nhưng tiền chỉ về `owner` mà chính người gửi đặt trong datum của nó.
+  đúc. Ô rác ở địa chỉ quỹ (không mang NFT, datum thiếu hoặc không đọc được thành datum quỹ) thì
+  ai cũng tiêu được, không luật nào — tiền gửi nhầm không bị khoá vĩnh viễn. Ô MANG NFT mà datum
+  hỏng thì bị bác. Ô rác tiêu cùng giao dịch với ô quỹ không nới được gì: luật "một redeemer" của
+  `Donate` và "chỉ redeemer của chính quỹ" của `Reclaim` vẫn đếm nó.
 - **Một redeemer mỗi giao dịch `Donate`** — cùng bài học `donation_escrow`: `treasury_donation`
   là một con số cho cả giao dịch, script khác cùng giao dịch sẽ đếm chung khoản nộp.
 - **`last_epoch` lúc mở bắt buộc = epoch mở − 1.** Nộp được ngay trong epoch mở, và người mở không
@@ -190,6 +192,13 @@ Bốn quyết định, lý do đầy đủ ở đầu `epoch_donation.ak`:
 Quỹ cạn: `Donate` luôn đòi một ô quỹ đi tiếp, và ô đó phải có min-ADA. Khi quỹ còn dưới
 `per_epoch` + min-ADA, người gọi phải tự bù phần thiếu (luật không cấm bơm thêm) — `08 donate`
 dừng và báo thay vì tự rút ví vận hành. Phần còn lại về chủ quỹ qua `Reclaim` sau `idle_epochs`.
+
+Giữ sống quỹ là hành vi đã chấp nhận: ai cũng nộp được `per_epoch` từ ví riêng mỗi epoch, nên
+`Reclaim` lùi mãi. Kẻ đó trả bằng tiền của mình đúng thứ quỹ hứa nộp; quỹ không mất gì.
+Bài `donate_keepalive_from_the_callers_wallet_is_accepted` ghim hành vi này.
+
+`08` đặt `collateral_return`: script hỏng thì chỉ mất 3 tADA của ô đặt cọc, phần còn lại về ví.
+`08` dừng nếu thân giao dịch dựng xong không mang `total_collateral` đúng 3 tADA và `>= 150%` phí.
 
 Hai chỗ đã đổi so với đặc tả đầu (2026-10-29):
 - Đặc tả đầu cho `lovelace ra >= vào − treasury_donation`: người bất kỳ nộp được gần trọn quỹ
@@ -214,7 +223,8 @@ một địa chỉ; địa chỉ chỉ có sau `open`. Bản này CHƯA từng c
 
 `08_epoch_donation_emulator.mjs` gọi đúng các hàm của `08` trên Emulator với epoch giả 20 phút:
 mở quỹ → nộp epoch N → nộp lần hai cùng epoch N (validator bác) → nộp epoch N+1 → người lạ thu
-hồi sớm (validator bác) → người lạ thu hồi sau đủ 10 epoch, không chữ ký chủ (đối chứng; ví chủ
+hồi ở epoch N+1 (validator bác) → thu hồi ở epoch biên N+11 (validator bác) → người lạ thu hồi ở
+N+12, không chữ ký chủ (đối chứng; ví chủ
 nhận đúng 8 tADA, NFT bị đốt). Đo được: phase-two của validator trên giao dịch sắp nộp, gồm
 `treasury_donation` đọc từ thân giao dịch; ExUnits thật. KHÔNG đo được: sổ cái giả không áp
 `treasury_donation` và không kiểm cân bằng giá trị, và lịch đọc từ Blockfrost không chạy.
@@ -223,11 +233,11 @@ ExUnits đo trên Emulator ngày 2026-10-29 (phase-two, giao dịch thật sắp
 
 | Bước | Redeemer | mem | steps |
 |---|---|---|---|
-| open | Mint | 137 844 | 47 506 738 |
-| donate epoch N | Spend | 193 144 | 72 560 679 |
-| donate epoch N+1 | Spend | 189 250 | 69 983 202 |
-| reclaim | Spend | 154 162 | 52 922 293 |
-| reclaim | Mint | 30 496 | 8 332 486 |
+| open | Mint | 144 174 | 49 669 767 |
+| donate epoch N | Spend | 214 104 | 78 723 703 |
+| donate epoch N+1 | Spend | 210 210 | 76 146 226 |
+| reclaim | Spend | 175 122 | 59 086 770 |
+| reclaim | Mint | 30 796 | 8 380 486 |
 
 ## Bốn lỗ đã vá — đọc trước khi sửa validator
 

@@ -43,6 +43,9 @@ const EX_STEPS = 400_000_000n;
 /// Lùi cận dưới khỏi đồng hồ máy (lệch đồng hồ với mạng), và độ rộng tối đa của khoảng hiệu lực.
 const CLOCK_SLACK_MS = 60_000;
 const WINDOW_MS = 600_000;
+// Phần ô đặt cọc được phép mất nếu script hỏng; phần còn lại trả về ví qua collateral_return.
+// Luật sổ cái đòi ≥ 150% phí, nên mức này đủ cho phí tới 2 tADA.
+const COLLATERAL_AT_RISK = 3_000_000n;
 
 const REDEEMER_DONATE = Data.to(new Constr(0, []));
 const REDEEMER_RECLAIM = Data.to(new Constr(1, []));
@@ -255,7 +258,10 @@ export async function donate({ skipLocalChecks = false } = {}) {
     .filter((u) => Object.keys(u.assets).length === 1 && u.assets.lovelace > 5_000_000n)
     .sort((a, b) => (b.assets.lovelace > a.assets.lovelace ? 1 : -1));
   if (funding.length < 2) throw new Error("cần ít nhất 2 UTxO chỉ-ADA (> 5 tADA) để trả phí và đặt cọc");
-  const [payer, collateral] = funding;
+  // Ô trả phí = ô LỚN nhất; ô đặt cọc = ô NHỎ nhất còn đủ (> 5 tADA). Script hỏng thì chỉ mất
+  // COLLATERAL_AT_RISK, phần còn lại của ô đặt cọc trả về ví qua collateral_return.
+  const payer = funding[0];
+  const collateral = funding[funding.length - 1];
 
   const txb = lucid.newTx().rawConfig().txBuilder;
   txb.set_validity_start_interval(BigInt(win.lowerSlot));
@@ -273,6 +279,10 @@ export async function donate({ skipLocalChecks = false } = {}) {
   );
   txb.add_input(CML.SingleInputBuilder.from_transaction_unspent_output(utxoToCore(payer)).payment_key());
   txb.add_collateral(CML.SingleInputBuilder.from_transaction_unspent_output(utxoToCore(collateral)).payment_key());
+  txb.set_collateral_return(
+    CML.TransactionOutputBuilder.new().with_address(CML.Address.from_bech32(walletAddress)).next()
+      .with_value(assetsToValue({ lovelace: collateral.assets.lovelace - COLLATERAL_AT_RISK })).build().output(),
+  );
 
   // Chỉ số redeemer = vị trí của ô quỹ sau khi giao dịch SẮP XẾP đầu vào theo (mã giao dịch, số thứ tự).
   const ordered = [fundUtxo, payer]
@@ -294,6 +304,10 @@ export async function donate({ skipLocalChecks = false } = {}) {
   const built = txb.build(CML.ChangeSelectionAlgo.Default, wallet).build_unchecked();
 
   const oldBody = built.body();
+  const totalCollateral = oldBody.total_collateral();
+  if (totalCollateral === undefined || totalCollateral !== COLLATERAL_AT_RISK || totalCollateral * 2n < oldBody.fee() * 3n) {
+    throw new Error(`đặt cọc lệch: total_collateral=${totalCollateral}, phí=${oldBody.fee()} — dừng`);
+  }
   const oldOuts = oldBody.outputs();
   const placeholder = oldOuts.get(1);
   if (placeholder.amount().coin() !== donation || (placeholder.amount().multi_asset()?.policy_count() ?? 0) !== 0) {
@@ -303,14 +317,33 @@ export async function donate({ skipLocalChecks = false } = {}) {
   for (let i = 0; i < oldOuts.len(); i++) if (i !== 1) keptOuts.add(oldOuts.get(i));
 
   const body = CML.TransactionBody.new(oldBody.inputs(), keptOuts, oldBody.fee());
-  for (const [setter, getter] of [
+  const COPIED = [
     ["set_ttl", "ttl"], ["set_validity_interval_start", "validity_interval_start"],
     ["set_network_id", "network_id"], ["set_script_data_hash", "script_data_hash"],
     ["set_collateral_inputs", "collateral_inputs"], ["set_collateral_return", "collateral_return"],
     ["set_total_collateral", "total_collateral"], ["set_reference_inputs", "reference_inputs"],
     ["set_required_signers", "required_signers"],
-  ]) {
-    const v = oldBody[getter]?.();
+  ];
+  // Mọi trường tuỳ chọn khác của thân giao dịch Conway. Bản gốc mang bất kỳ trường nào trong số
+  // này thì bản dựng lại sẽ LẶNG LẼ đánh rơi nó — ném lỗi thay vì nộp một giao dịch khác ý.
+  const NOT_COPIED = [
+    "certs", "withdrawals", "auxiliary_data_hash", "mint", "voting_procedures",
+    "proposal_procedures", "current_treasury_value", "donation",
+  ];
+  for (const getter of [...COPIED.map(([, g]) => g), ...NOT_COPIED]) {
+    if (typeof oldBody[getter] !== "function") {
+      throw new Error(`CML không có TransactionBody.${getter}() — phiên bản lạ, dừng, đừng đoán`);
+    }
+  }
+  const dropped = NOT_COPIED.filter((g) => {
+    const v = oldBody[g]();
+    return v !== undefined && v !== null;
+  });
+  if (dropped.length) {
+    throw new Error(`thân giao dịch gốc có trường không chép lại được: ${dropped.join(", ")} — dừng`);
+  }
+  for (const [setter, getter] of COPIED) {
+    const v = oldBody[getter]();
     if (v !== undefined && v !== null) body[setter](v);
   }
   body.set_donation(donation);
@@ -332,7 +365,7 @@ export async function reclaim() {
   // Không cần chữ ký: ai cũng nộp được, ví đang chọn chỉ trả phí. Toàn bộ lovelace quỹ về địa chỉ
   // khoá bởi `owner` (không phần uỷ quyền) — validator đếm theo phần thanh toán.
   const ownerAddress = credentialToAddress(lucid.config().network, { type: "Key", hash: datum.owner });
-  console.log("epoch       ", win.epoch, "— thu hồi được từ epoch", datum.last_epoch + datum.idle_epochs);
+  console.log("epoch       ", win.epoch, "— thu hồi được từ epoch", datum.last_epoch + datum.idle_epochs + 1n);
   console.log("trả về      ", fundUtxo.assets.lovelace, "lovelace →", ownerAddress);
 
   const tx = await lucid
