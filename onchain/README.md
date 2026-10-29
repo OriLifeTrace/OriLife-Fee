@@ -180,21 +180,31 @@ Bốn quyết định, lý do đầy đủ ở đầu `epoch_donation.ak`:
   `1793145600` s = mốc 0 + 322 × 432 000 s).
 - **NFT trạng thái đúc một lần từ `seed`**, chính sách = băm chính validator. Địa chỉ quỹ ai cũng
   gửi vào được kèm datum tự đặt; chỉ "ô giữ NFT" là quỹ thật, và datum của nó đã được kiểm lúc
-  đúc. Ô rác ở địa chỉ quỹ (không mang NFT, datum thiếu hoặc không đọc được thành datum quỹ) thì
-  ai cũng tiêu được, không luật nào — tiền gửi nhầm không bị khoá vĩnh viễn. Ô MANG NFT mà datum
-  hỏng thì bị bác. Ô rác tiêu cùng giao dịch với ô quỹ không nới được gì: luật "một redeemer" của
+  đúc. Ô rác ở địa chỉ quỹ (không mang NFT, datum thiếu hoặc không đọc được thành datum quỹ HỢP
+  LỆ — kể cả datum đúng kiểu mà `owner` không dài đúng 28 byte, vì `Reclaim` không dựng được đầu ra
+  tới một `owner` như vậy) thì ai cũng tiêu được, không luật nào — tiền gửi nhầm không bị khoá vĩnh
+  viễn (`stray_with_a_one_byte_owner_spends_freely`). Ô MANG NFT mà datum hỏng hoặc `owner` sai độ
+  dài thì bị bác (`fund_with_the_nft_and_a_one_byte_owner_fails`). Ô rác tiêu cùng giao dịch với ô quỹ không nới được gì: luật "một redeemer" của
   `Donate` và "chỉ redeemer của chính quỹ" của `Reclaim` vẫn đếm nó.
 - **Một redeemer mỗi giao dịch `Donate`** — cùng bài học `donation_escrow`: `treasury_donation`
   là một con số cho cả giao dịch, script khác cùng giao dịch sẽ đếm chung khoản nộp.
 - **`last_epoch` lúc mở bắt buộc = epoch mở − 1.** Nộp được ngay trong epoch mở, và người mở không
-  khai lùi `last_epoch` để `Reclaim` sớm trước khi ai kịp nộp.
+  khai lùi `last_epoch` để `Reclaim` sớm trước khi ai kịp nộp. Hệ quả: tính từ epoch nộp cuối,
+  `Reclaim` đòi đủ `idle_epochs` epoch TRỌN nằm yên; nhưng quỹ CHƯA nộp lần nào thì chính epoch mở
+  — dù mở lúc epoch chỉ còn vài phút — đã tính là một epoch nằm yên (`idle_epochs = 1` thu hồi
+  được ngay từ epoch kế epoch mở, bài `reclaim_passes_with_idle_one_in_the_epoch_after_opening`).
+  Người mở nên nộp lần đầu ngay trong epoch mở. `08 open` KHÔNG tự nộp — chạy `08 donate` ngay sau
+  `open` (lần chạy Preprod bên dưới đã làm vậy, cùng epoch 322).
 
 Quỹ cạn: `Donate` luôn đòi một ô quỹ đi tiếp, và ô đó phải có min-ADA. Khi quỹ còn dưới
 `per_epoch` + min-ADA, người gọi phải tự bù phần thiếu (luật không cấm bơm thêm) — `08 donate`
 dừng và báo thay vì tự rút ví vận hành. Phần còn lại về chủ quỹ qua `Reclaim` sau `idle_epochs`.
 `08 open` từ chối `per_epoch` nhỏ hơn min-ADA của đầu ra giữ chỗ chỉ-ADA mà `donate` dựng (đo trên
 địa chỉ base, khoảng 0,97 tADA ở tham số hiện hành) — dưới mức đó quỹ mở được mà không bao giờ nộp
-được. `08 open` cũng hỏi chuỗi trước khi ghi đè tệp trạng thái: NFT quỹ cũ còn thì dừng. Mọi lệnh
+được. `08 open` cũng từ chối quỹ nhỏ hơn `per_epoch` + min-ADA của ô quỹ đi tiếp (đo bằng CML
+trên đúng đầu ra `donate` sẽ dựng, khoảng 1,28 tADA ở tham số hiện hành) — dưới mức đó lần nộp
+đầu đã không dựng được, và chủ phải chờ `idle_epochs` epoch mới thu hồi. Phép kiểm này ở kịch
+bản, validator không cấm. `08 open` cũng hỏi chuỗi trước khi ghi đè tệp trạng thái: NFT quỹ cũ còn thì dừng. Mọi lệnh
 chờ xác nhận tối đa 10 phút (`AWAIT_TX_TIMEOUT_MS` trong `common.mjs`), quá thì ném lỗi.
 
 Giữ sống quỹ là hành vi đã chấp nhận: ai cũng nộp được `per_epoch` từ ví riêng mỗi epoch, nên
@@ -234,7 +244,9 @@ sau 1 epoch nằm yên), địa chỉ quỹ `addr_test1wpjn5fmw0vpp3078kyxwnep52
 | donate epoch 322 | `571f38cb6f590d0a318b0bacbeade934852243a3dd8247ef513d39fbebab5c9a` | block 5349030, `treasury_donation` = 1 000 000 |
 | donate lần hai epoch 322 | — | kịch bản tự bác: "epoch 322 đã nộp rồi — lần kế từ epoch 323" |
 
-Chưa chạy trên Preprod: nộp ở epoch kế tiếp và thu hồi (cần chờ chuỗi sang epoch 323 và ≥325).
+Lần chạy này dùng validator ở commit `5282e3a`. Bản vá `owner` sai độ dài 28 byte đổi script hash
+của `epoch_donation`, nên quỹ trên chạy tiếp theo luật cũ: nộp ở epoch kế tiếp và thu hồi ở epoch
+≥325 phải dùng `plutus.json` của `5282e3a`. Quỹ Preprod theo bản hiện hành mở lại bằng `08 open`.
 
 `08_epoch_donation_emulator.mjs` gọi đúng các hàm của `08` trên Emulator với epoch giả 20 phút:
 mở quỹ → nộp epoch N → nộp lần hai cùng epoch N (validator bác) → nộp epoch N+1 → người lạ thu
@@ -242,8 +254,10 @@ hồi ở epoch N+1 (validator bác) → thu hồi ở epoch biên N+11 (validat
 N+12, không chữ ký chủ (đối chứng; ví chủ
 nhận đúng 8 tADA trong đúng một ô không datum, NFT bị đốt). Thêm các bước kịch bản tự bác trước khi
 dựng giao dịch: `open` với `per_epoch` dưới min-ADA của đầu ra giữ chỗ, `open` lần hai khi quỹ cũ
-còn trên chuỗi, và `donate` khi quỹ còn ít hơn `per_epoch` ("quỹ cạn"); cùng bước `open` lại thành
-công sau khi quỹ cũ đã bị người lạ thu hồi (tệp trạng thái không có `reclaimTx`). Đo được: phase-two của validator trên giao dịch sắp nộp, gồm
+còn trên chuỗi, `open` với quỹ < `per_epoch` và với quỹ = `per_epoch` + 1 tADA (dưới min-ADA ô quỹ
+đi tiếp), và `donate` khi quỹ còn ít hơn `per_epoch` ("quỹ cạn" — quỹ thiếu tiền đó dựng qua cờ
+`skipLocalChecks` của `open`, chỉ bộ giả lập dùng); cùng bước `open` lại thành công sau khi quỹ cũ
+đã bị người lạ thu hồi (tệp trạng thái không có `reclaimTx`). Đo được: phase-two của validator trên giao dịch sắp nộp, gồm
 `treasury_donation` đọc từ thân giao dịch; ExUnits thật. KHÔNG đo được: sổ cái giả không áp
 `treasury_donation` và không kiểm cân bằng giá trị, và lịch đọc từ Blockfrost không chạy.
 
@@ -252,9 +266,9 @@ ExUnits đo trên Emulator ngày 2026-10-29 (phase-two, giao dịch thật sắp
 | Bước | Redeemer | mem | steps |
 |---|---|---|---|
 | open | Mint | 144 374 | 49 701 767 |
-| donate epoch N | Spend | 214 304 | 78 755 703 |
-| donate epoch N+1 | Spend | 210 410 | 76 178 226 |
-| reclaim | Spend | 191 275 | 66 844 863 |
+| donate epoch N | Spend | 217 308 | 79 787 383 |
+| donate epoch N+1 | Spend | 213 414 | 77 209 906 |
+| reclaim | Spend | 194 279 | 67 876 543 |
 | reclaim | Mint | 31 196 | 8 444 486 |
 
 ## Bốn lỗ đã vá — đọc trước khi sửa validator

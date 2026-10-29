@@ -5,18 +5,23 @@
 ////
 //// Hai lối ra, không có lối thứ ba:
 ////   · `Donate` — ai cũng gọi; nộp kho bạc, ô quỹ đi tiếp với `last_epoch` = epoch hiện tại.
-////   · `Reclaim` — ai cũng gọi, KHÔNG cần chữ ký, CHỈ khi quỹ đã nằm yên ĐỦ `idle_epochs` epoch
-////     TRỌN không ai nộp: epoch hiện tại `> last_epoch + idle_epochs` (luật "không khoá ADA vĩnh
-////     viễn": mất khoá chủ quỹ không được khoá ADA mãi). Dấu `>` chặt: ở epoch
+////   · `Reclaim` — ai cũng gọi, KHÔNG cần chữ ký, CHỈ khi epoch hiện tại
+////     `> last_epoch + idle_epochs` (luật "không khoá ADA vĩnh viễn": mất khoá chủ quỹ không được
+////     khoá ADA mãi). Tính từ epoch nộp cuối, đó là ĐỦ `idle_epochs` epoch TRỌN không ai nộp.
+////     Riêng quỹ CHƯA nộp lần nào (`last_epoch` = epoch mở − 1, mục 8): chính epoch mở — dù mở
+////     lúc chỉ còn vài phút — đã tính là một epoch nằm yên, nên `idle_epochs = 1` thu hồi được
+////     ngay từ epoch kế epoch mở. Người mở nên nộp lần đầu ngay trong epoch mở. Dấu `>` chặt: ở epoch
 ////     `last_epoch + idle_epochs` chỉ `Donate` hợp lệ. TỪ epoch kế đó trở đi HAI nhánh cùng hợp
 ////     lệ — `Donate` không có cận trên. Đua đó là có chủ ý: ai nộp trước thì quỹ sống thêm (tiền
 ////     vào kho bạc), ai thu hồi trước thì tiền về `owner`; không nhánh nào làm mất tiền. Toàn bộ
 ////     lovelace về ĐÚNG MỘT đầu ra ở địa chỉ `owner` không phần uỷ quyền, không datum, không
 ////     script tham chiếu (người gọi không chọn được hình dạng đầu ra); NFT quỹ đốt cùng lượt.
 ////
-//// Ô ở địa chỉ quỹ KHÔNG mang NFT và có datum không đọc được thành `EpochDonationDatum` (không
-//// datum, datum sai kiểu): ai cũng tiêu được, tự do — không ai nhận ra chủ của nó, và khoá nó lại
-//// là khoá ADA vĩnh viễn. Ô mang NFT thì datum luôn đọc được (kiểm lúc đúc và ở mỗi `Donate`).
+//// Ô ở địa chỉ quỹ KHÔNG mang NFT và có datum không đọc được thành datum quỹ HỢP LỆ (không
+//// datum, datum sai kiểu, kể cả `EpochDonationDatum` có `owner` sai độ dài 28 byte): ai cũng tiêu
+//// được, tự do — không ai nhận ra chủ của nó, `Reclaim` không dựng được đầu ra tới một `owner` sai
+//// độ dài, và khoá nó lại là khoá ADA vĩnh viễn. Ô mang NFT thì datum luôn hợp lệ (kiểm lúc đúc
+//// và ở mỗi `Donate`); ô mang NFT mà datum không hợp lệ thì bị bác.
 ////
 //// ─────────────────────────────────────────────────────────────────────────────
 //// QUYẾT ĐỊNH THIẾT KẾ — đọc trước khi sửa.
@@ -287,12 +292,19 @@ validator epoch_donation(
   }
 }
 
-/// Datum đọc được thành `EpochDonationDatum` thì `Some`, mọi trường hợp khác `None`.
+/// Datum đọc được thành `EpochDonationDatum` VÀ `owner` dài đúng 28 byte thì `Some`, mọi trường
+/// hợp khác `None`. `owner` sai độ dài thì `Reclaim` không dựng được đầu ra trả chủ: ô không NFT
+/// mang datum đó phải là ô tự do, không phải ô khoá vĩnh viễn.
 fn parse_fund(datum: Option<Data>) -> Option<EpochDonationDatum> {
   when datum is {
     Some(raw) ->
       if raw is fund: EpochDonationDatum {
-        Some(fund)
+        // MUT:P_OWNER_LENGTH
+        if bytearray.length(fund.owner) == 28 {
+          Some(fund)
+        } else {
+          None
+        }
       } else {
         None
       }
@@ -804,7 +816,8 @@ test reclaim_passes_after_idle_epochs_without_any_signature() {
   run_reclaim(-1, window_in(t_epoch + 11), True)
 }
 
-/// Epoch `last_epoch + idle_epochs`: mới có `idle_epochs − 1` epoch trọn nằm yên. Bị bác —
+/// Quỹ đã nộp ở epoch `last_epoch`; epoch `last_epoch + idle_epochs`: tính từ epoch nộp cuối mới
+/// có `idle_epochs − 1` epoch trọn nằm yên. Bị bác —
 /// epoch này thuộc về `Donate` (`donate_passes_in_the_epoch_reclaim_is_still_refused`).
 test reclaim_fails_one_epoch_early() fail {
   run_reclaim(-1, window_in(t_epoch + 10), True)
@@ -1256,6 +1269,9 @@ test reclaim_fails_with_idle_one_in_the_opening_epoch() fail {
   reclaim_fund_at(datum_with_idle(t_epoch - 1, 1), window_in(t_epoch))
 }
 
+/// Quỹ chưa nộp lần nào: epoch mở tính là một epoch nằm yên (`last_epoch` = epoch mở − 1), nên
+/// `idle_epochs = 1` thu hồi được ngay epoch kế dù quỹ mở lúc epoch mở chỉ còn vài phút. Hành vi
+/// đã chấp nhận (đầu tệp, nhánh `Reclaim`); người mở nộp lần đầu ngay trong epoch mở để tránh.
 test reclaim_passes_with_idle_one_in_the_epoch_after_opening() {
   reclaim_fund_at(datum_with_idle(t_epoch - 1, 1), window_in(t_epoch + 1))
 }
@@ -1358,6 +1374,25 @@ test stray_with_a_datum_of_another_type_spends_freely() {
 /// Ô mang NFT quỹ mà datum hỏng: không bao giờ tiêu tự do.
 test fund_with_the_nft_and_a_garbage_datum_fails() fail {
   let raw: Data = 42
+  spend_stray(
+    Some(raw),
+    Output { ..stray_input(InlineDatum(raw)), value: fund_value(10 * one_ada) },
+    [own_redeemer(Reclaim)],
+  )
+}
+
+/// Ô không NFT, datum đọc được thành
+/// `EpochDonationDatum` nhưng `owner` một byte. Không có đầu ra nào tới `VerificationKey(#"00")`
+/// dựng được trên sổ cái, nên đi nhánh `Reclaim` là khoá vĩnh viễn — ô này phải tiêu tự do.
+test stray_with_a_one_byte_owner_spends_freely() {
+  let raw: Data = EpochDonationDatum { ..fund_datum(t_epoch), owner: #"00" }
+  spend_stray(Some(raw), stray_input(InlineDatum(raw)), [own_redeemer(Reclaim)])
+}
+
+/// Cùng datum `owner` một byte, nhưng ô mang NFT quỹ: không tiêu tự do (lúc đúc đã chặn
+/// `owner` sai độ dài; chốt `!has_nft` ở nhánh `None` giữ phòng khi chốt đúc hỏng).
+test fund_with_the_nft_and_a_one_byte_owner_fails() fail {
+  let raw: Data = EpochDonationDatum { ..fund_datum(t_epoch), owner: #"00" }
   spend_stray(
     Some(raw),
     Output { ..stray_input(InlineDatum(raw)), value: fund_value(10 * one_ada) },

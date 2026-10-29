@@ -194,12 +194,33 @@ function minAdaOfPlaceholder(lucid, keyHash) {
     .with_value(CML.Value.from_coin(1n))
     .build()
     .output();
+  return minAdaOf(lucid, output);
+}
+
+/// Min-ADA sổ cái đòi cho một đầu ra CML, theo `coinsPerUtxoByte` hiện hành.
+function minAdaOf(lucid, output) {
   return CML.min_ada_required(output, BigInt(lucid.config().protocolParameters.coinsPerUtxoByte));
+}
+
+/// Ô quỹ đi tiếp mà `Donate` dựng: địa chỉ quỹ, datum inline với `last_epoch = epoch`, giữ NFT.
+/// `open` đo min-ADA trên CÙNG đầu ra này nên hai lệnh không lệch nhau về kích thước ô.
+function nextFundOutput(fund, datum, epoch, lovelace) {
+  const nextDatum = CML.PlutusData.from_cbor_hex(
+    Data.to({ ...datum, last_epoch: BigInt(epoch) }, EpochDonationDatum),
+  );
+  return CML.TransactionOutputBuilder.new()
+    .with_address(CML.Address.from_bech32(fund.address))
+    .with_data(CML.DatumOption.new_datum(nextDatum))
+    .next()
+    .with_value(assetsToValue({ lovelace, [fund.unit]: 1n }))
+    .build();
 }
 
 // ── Lệnh con ─────────────────────────────────────────────────────────────────
 
-export async function open({ fundLovelace = DEFAULT_FUND, perEpoch = DEFAULT_PER_EPOCH, idleEpochs = DEFAULT_IDLE_EPOCHS } = {}) {
+/// `skipLocalChecks` chỉ dành cho bộ giả lập: bỏ phép kiểm "quỹ đủ cho lần nộp đầu" để dựng một
+/// quỹ thiếu tiền (validator không cấm) rồi đo `donate` trên nó. Dòng lệnh không truyền cờ này.
+export async function open({ fundLovelace = DEFAULT_FUND, perEpoch = DEFAULT_PER_EPOCH, idleEpochs = DEFAULT_IDLE_EPOCHS, skipLocalChecks = false } = {}) {
   const prior = readState();
   if (perEpoch <= 0n || idleEpochs <= 0n) throw new Error("per_epoch và idle_epochs phải lớn hơn 0");
 
@@ -237,6 +258,23 @@ export async function open({ fundLovelace = DEFAULT_FUND, perEpoch = DEFAULT_PER
     owner: keyHashOf(walletAddress),
     idle_epochs: idleEpochs,
   };
+
+  // Lần nộp đầu rút `per_epoch` khỏi quỹ và phải để lại một ô quỹ đi tiếp đủ min-ADA (đo trên
+  // đúng đầu ra `donate` sẽ dựng). Thiếu thì quỹ mở được mà không bao giờ tự nộp được, và chủ
+  // chờ `idle_epochs` epoch mới thu hồi. Kiểm TRƯỚC khi ghi tệp trạng thái và dựng giao dịch.
+  if (!skipLocalChecks) {
+    const firstRemainder = fundLovelace - perEpoch;
+    const minAda = firstRemainder >= 0n
+      ? minAdaOf(lucid, nextFundOutput(fund, datum, win.epoch, firstRemainder).output())
+      : null;
+    if (minAda === null || firstRemainder < minAda) {
+      throw new Error(
+        `quỹ không đủ cho lần nộp đầu: ${fundLovelace} lovelace < per_epoch ${perEpoch} + min-ADA ` +
+        `${minAda ?? "(chưa đo được, quỹ < per_epoch)"} của ô quỹ đi tiếp — quỹ sẽ mở được nhưng ` +
+        `không bao giờ nộp được. Bỏ thêm ADA hoặc hạ per_epoch`,
+      );
+    }
+  }
   console.log("lịch epoch  ", schedule, "— epoch hiện tại", win.epoch);
   console.log("địa chỉ quỹ ", fund.address);
   console.log("quỹ         ", fundLovelace, "lovelace; mỗi epoch", perEpoch, "; nằm yên", idleEpochs, "epoch thì ai cũng trả được quỹ về chủ");
@@ -289,15 +327,7 @@ export async function donate({ skipLocalChecks = false } = {}) {
   console.log("epoch       ", win.epoch, "— nộp lần cuối ở epoch", datum.last_epoch, `(${strays} ô khác ở địa chỉ quỹ, bỏ qua)`);
   console.log("quỹ         ", fundUtxo.assets.lovelace, "→", nextLovelace, "lovelace; nộp", donation);
 
-  const nextDatum = CML.PlutusData.from_cbor_hex(
-    Data.to({ ...datum, last_epoch: BigInt(win.epoch) }, EpochDonationDatum),
-  );
-  const nextOutput = CML.TransactionOutputBuilder.new()
-    .with_address(CML.Address.from_bech32(fund.address))
-    .with_data(CML.DatumOption.new_datum(nextDatum))
-    .next()
-    .with_value(assetsToValue({ lovelace: nextLovelace, [fund.unit]: 1n }))
-    .build();
+  const nextOutput = nextFundOutput(fund, datum, win.epoch, nextLovelace);
 
   if (!skipLocalChecks) {
     if (BigInt(win.epoch) <= datum.last_epoch) {
@@ -305,9 +335,7 @@ export async function donate({ skipLocalChecks = false } = {}) {
     }
     // Quỹ cạn: ô đi tiếp phải có min-ADA. Hợp đồng cho người gọi tự bù, nhưng kịch bản không
     // tự rút ví vận hành để nuôi quỹ — dừng và nói ra. Phần dư về chủ quỹ qua `reclaim`.
-    const minAda = CML.min_ada_required(
-      nextOutput.output(), BigInt(lucid.config().protocolParameters.coinsPerUtxoByte),
-    );
+    const minAda = minAdaOf(lucid, nextOutput.output());
     if (nextLovelace < minAda) {
       throw new Error(
         `quỹ cạn: sau khi nộp còn ${nextLovelace} < min-ADA ${minAda}. Quỹ không tự nộp tiếp được; ` +

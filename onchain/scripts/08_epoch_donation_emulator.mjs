@@ -250,11 +250,25 @@ const reclaimTx = await reclaim();
 
 // Quỹ cũ đã bị NGƯỜI LẠ thu hồi (tệp trạng thái của chủ không có `reclaimTx` nếu người lạ chạy
 // từ máy khác): `open` hỏi chuỗi, không thấy NFT ⟹ cho mở quỹ mới.
-currentStep = "open sau thu hồi";
-console.log(`\n━━ open lại sau thu hồi, quỹ nhỏ hơn per_epoch (epoch ${epochNow()}) ━━`);
+console.log(`\n━━ open lại sau thu hồi, quỹ nhỏ hơn per_epoch + min-ADA (epoch ${epochNow()}) ━━`);
 saveStateRaw({ reclaimTx: undefined });
 emulator.awaitBlock(1);
-await open({ fundLovelace: 1_500_000n, perEpoch: 2_000_000n });
+// Kịch bản tự bác trước khi dựng giao dịch (không phải validator — validator không cấm quỹ
+// thiếu tiền), nên dùng `expectScriptRefusal`: tệp trạng thái không đổi. Hai biên: quỹ < per_epoch,
+// và quỹ = per_epoch + (min-ADA − 1) — nộp được lần đầu nhưng ô đi tiếp thiếu min-ADA.
+await expectScriptRefusal(
+  "open với quỹ < per_epoch",
+  () => open({ fundLovelace: 1_500_000n, perEpoch: 2_000_000n }),
+  /quỹ không đủ cho lần nộp đầu/,
+);
+await expectScriptRefusal(
+  "open với quỹ = per_epoch + 1 tADA (dưới min-ADA ô quỹ)",
+  () => open({ fundLovelace: 3_000_000n, perEpoch: 2_000_000n }),
+  /quỹ không đủ cho lần nộp đầu/,
+);
+currentStep = "open sau thu hồi";
+// Quỹ thiếu tiền vẫn dựng được qua `skipLocalChecks` để đo `donate` trên nó.
+await open({ fundLovelace: 1_500_000n, perEpoch: 2_000_000n, skipLocalChecks: true });
 check(st().openedEpoch === epochNow(), "mở được quỹ mới khi quỹ cũ không còn trên chuỗi");
 emulator.awaitBlock(1);
 await expectScriptRefusal("donate khi quỹ < per_epoch", () => donate({ skipLocalChecks: true }), /quỹ cạn/);
