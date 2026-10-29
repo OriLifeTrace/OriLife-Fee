@@ -58,3 +58,16 @@ export const VaultRedeemer = Data.Enum([
 ]);
 
 export const EscrowRedeemer = Data.Enum([Data.Literal("Donate")]);
+
+/// Quỹ nộp kho bạc theo epoch. Thứ tự trường khớp `epoch_donation.ak` ▸ `EpochDonationDatum`.
+/// Mọi trường trừ `last_epoch` bất biến suốt đời quỹ; `Donate` chép nguyên datum vào và chỉ
+/// đổi `last_epoch`.
+export const EpochDonationDatum = Data.Object({
+  last_epoch: Data.Integer(),
+  per_epoch: Data.Integer(),
+  owner: Data.Bytes(),
+  idle_epochs: Data.Integer(),
+});
+
+/// Thứ tự khớp `epoch_donation.ak` ▸ `EpochDonationRedeemer`: `Donate` = 0, `Reclaim` = 1.
+export const EpochDonationRedeemer = Data.Enum([Data.Literal("Donate"), Data.Literal("Reclaim")]);
