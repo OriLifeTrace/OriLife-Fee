@@ -223,7 +223,18 @@ node onchain/scripts/08_epoch_donation.mjs reclaim
 
 Trạng thái ghi vào `scripts/epoch_donation_preprod.json` (seed, lịch epoch, địa chỉ quỹ); đặt
 `ORILIFE_EPOCH_DONATION_STATE_FILE` để trỏ sang tệp khác. Validator có tham số `seed` nên mỗi quỹ
-một địa chỉ; địa chỉ chỉ có sau `open`. Bản này CHƯA từng chạy trên Preprod.
+một địa chỉ; địa chỉ chỉ có sau `open`.
+
+Đã chạy trên Preprod ngày 2026-10-29, epoch 322 (quỹ 10 tADA, nộp 1 tADA mỗi epoch, thu hồi được
+sau 1 epoch nằm yên), địa chỉ quỹ `addr_test1wpjn5fmw0vpp3078kyxwnep528cf2zvypafu0mnj59xlxrczf07k5`:
+
+| Bước | Giao dịch | Đối chiếu trên chuỗi |
+|---|---|---|
+| open | `9a0016db50d541f31f019d960fb69ee68fba981d464c1bab4b26f2a9e039aa79` | block 5349020 |
+| donate epoch 322 | `571f38cb6f590d0a318b0bacbeade934852243a3dd8247ef513d39fbebab5c9a` | block 5349030, `treasury_donation` = 1 000 000 |
+| donate lần hai epoch 322 | — | kịch bản tự bác: "epoch 322 đã nộp rồi — lần kế từ epoch 323" |
+
+Chưa chạy trên Preprod: nộp ở epoch kế tiếp và thu hồi (cần chờ chuỗi sang epoch 323 và ≥325).
 
 `08_epoch_donation_emulator.mjs` gọi đúng các hàm của `08` trên Emulator với epoch giả 20 phút:
 mở quỹ → nộp epoch N → nộp lần hai cùng epoch N (validator bác) → nộp epoch N+1 → người lạ thu
