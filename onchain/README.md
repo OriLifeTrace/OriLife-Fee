@@ -227,29 +227,45 @@ Hai chỗ đã đổi so với đặc tả đầu (2026-10-29):
 cd onchain/orilife_treasury && aiken check && aiken build
 cd ../.. && node onchain/scripts/08_epoch_donation_emulator.mjs   # Emulator, không chạm mạng
 node onchain/scripts/08_epoch_donation.mjs open [quỹ_lovelace] [per_epoch] [idle_epochs]   # Preprod; mặc định 10 tADA, 1 tADA, 10
-node onchain/scripts/08_epoch_donation.mjs donate
+node onchain/scripts/08_epoch_donation.mjs donate [khoản_lovelace|-] [tệp_tóm_tắt.json]
 node onchain/scripts/08_epoch_donation.mjs reclaim
 ```
+
+`donate` không đối số nộp đúng `per_epoch`. Nêu khoản lớn hơn thì quỹ vẫn chỉ góp `per_epoch`, ví
+nộp bù phần còn lại (đúng luật validator ở trên); khoản dưới `per_epoch` bị kịch bản bác. Tệp tóm
+tắt là sổ của epoch được tất toán, đi vào metadata nhãn 674 của giao dịch nộp:
+
+```json
+{ "epoch": 322, "tx_count": 7, "total_lovelace": "30000000", "merkle_root": "<64 ký tự hex>" }
+```
+
+Metadata ra trên chuỗi: `{"msg": ["OriLife Covenant epoch donation"], "epoch", "tx_count",
+"total_lovelace", "merkle_root"}`. Khoá thừa, số âm, `merkle_root` sai độ dài thì kịch bản dừng
+trước khi dựng giao dịch.
 
 Trạng thái ghi vào `scripts/epoch_donation_preprod.json` (seed, lịch epoch, địa chỉ quỹ); đặt
 `ORILIFE_EPOCH_DONATION_STATE_FILE` để trỏ sang tệp khác. Validator có tham số `seed` nên mỗi quỹ
 một địa chỉ; địa chỉ chỉ có sau `open`.
 
-Đã chạy trên Preprod ngày 2026-10-29, epoch 322 (quỹ 10 tADA, nộp 1 tADA mỗi epoch, thu hồi được
-sau 1 epoch nằm yên), địa chỉ quỹ `addr_test1wpjn5fmw0vpp3078kyxwnep528cf2zvypafu0mnj59xlxrczf07k5`:
+Quỹ Preprod đang chạy, mở ngày 2026-10-30 ở epoch 322 bằng bản hiện hành (quỹ 30 tADA, nộp
+1 tADA mỗi epoch, thu hồi được sau 12 epoch nằm yên), địa chỉ
+`addr_test1wrqfve40d2s5zpdfp6t747wqfu6quuprnejfp930hm2rrqcerl729`; trạng thái ở
+`scripts/epoch_donation_preprod.json`:
 
 | Bước | Giao dịch | Đối chiếu trên chuỗi |
 |---|---|---|
-| open | `9a0016db50d541f31f019d960fb69ee68fba981d464c1bab4b26f2a9e039aa79` | block 5349020 |
-| donate epoch 322 | `571f38cb6f590d0a318b0bacbeade934852243a3dd8247ef513d39fbebab5c9a` | block 5349030, `treasury_donation` = 1 000 000 |
-| donate lần hai epoch 322 | — | kịch bản tự bác: "epoch 322 đã nộp rồi — lần kế từ epoch 323" |
+| open | `fad2ce3066201f349d910db0a5c26dcab5aec7c540d0a893fecbb4eef65fb2e7` | block 5352179 |
+| donate epoch 322 | `e6dc12fb1e1e08cd7f06722e84e256c122553b3106ff7c2135cf8aa3acf48798` | block 5352197, `treasury_donation` = 1 000 000 |
 
-Lần chạy này dùng validator ở commit `5282e3a`. Bản vá `owner` sai độ dài 28 byte đổi script hash
-của `epoch_donation`, nên quỹ trên chạy tiếp theo luật cũ: nộp ở epoch kế tiếp và thu hồi ở epoch
-≥325 phải dùng `plutus.json` của `5282e3a`. Quỹ Preprod theo bản hiện hành mở lại bằng `08 open`.
+Quỹ chạy thử trước đó (2026-10-29, validator ở commit `5282e3a`, địa chỉ
+`addr_test1wpjn5fmw0vpp3078kyxwnep528cf2zvypafu0mnj59xlxrczf07k5`) đã nộp epoch 322 và theo luật
+cũ: thu hồi từ epoch ≥325 phải dùng `plutus.json` của `5282e3a`, vì bản vá `owner` sai độ dài 28
+byte đã đổi script hash.
 
 `08_epoch_donation_emulator.mjs` gọi đúng các hàm của `08` trên Emulator với epoch giả 20 phút:
-mở quỹ → nộp epoch N → nộp lần hai cùng epoch N (validator bác) → nộp epoch N+1 → người lạ thu
+mở quỹ → nộp epoch N → nộp lần hai cùng epoch N (validator bác) → nộp khoản dưới `per_epoch` ở
+epoch N+1 (kịch bản bác; vòng qua kịch bản thì validator bác) → nộp 3 tADA kèm tóm tắt sổ ở epoch
+N+1 (quỹ chỉ mất 1 tADA, metadata 674 đọc lại khớp) → người lạ thu
 hồi ở epoch N+1 (validator bác) → thu hồi ở epoch biên N+11 (validator bác) → người lạ thu hồi ở
 N+12, không chữ ký chủ (đối chứng; ví chủ
 nhận đúng 8 tADA trong đúng một ô không datum, NFT bị đốt). Thêm các bước kịch bản tự bác trước khi

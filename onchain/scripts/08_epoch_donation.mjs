@@ -1,10 +1,15 @@
 // Quỹ nộp kho bạc Cardano mỗi epoch một lần (`validators/epoch_donation.ak`).
 //
 //   node onchain/scripts/08_epoch_donation.mjs open [quỹ_lovelace] [per_epoch] [idle_epochs]
-//   node onchain/scripts/08_epoch_donation.mjs donate
+//   node onchain/scripts/08_epoch_donation.mjs donate [khoản_lovelace|-] [tệp_tóm_tắt.json]
 //   node onchain/scripts/08_epoch_donation.mjs reclaim
 //
 // Mặc định: quỹ 10 tADA, nộp 1 tADA mỗi epoch, chủ quỹ thu hồi được sau 10 epoch nằm yên.
+//
+// `donate` nộp `per_epoch` khi không nêu khoản. Nêu khoản lớn hơn thì quỹ vẫn chỉ góp `per_epoch`,
+// phần dư do ví nộp tự bỏ (validator cho bơm thêm, cấm quỹ mất quá `per_epoch`). Tệp tóm tắt, nếu có,
+// đi vào metadata nhãn `DONATION_METADATA_LABEL`: epoch được tất toán, số giao dịch, tổng lovelace,
+// gốc Merkle của sổ — để ai cũng đối chiếu được khoản nộp với sổ đã công bố.
 // Khoá API nhà cung cấp chuỗi và cụm từ ví nhận qua biến môi trường, như `connect()` trong
 // `common.mjs`; kịch bản không tự mở chỗ cất bí mật nào.
 //
@@ -30,6 +35,10 @@ import { EpochDonationDatum } from "./schemas.mjs";
 
 /// Phải khớp `epoch_donation.ak` ▸ `fund_nft_name`.
 export const FUND_NFT_NAME = "epoch-donation";
+
+/// Nhãn CIP-20 (`msg`): trình duyệt chuỗi hiện được ngay; các khoá còn lại là tóm tắt sổ.
+export const DONATION_METADATA_LABEL = 674n;
+const DONATION_MSG = "OriLife Covenant epoch donation";
 
 const DEFAULT_FUND = 10_000_000n;
 const DEFAULT_PER_EPOCH = 1_000_000n;
@@ -216,6 +225,47 @@ function nextFundOutput(fund, datum, epoch, lovelace) {
     .build();
 }
 
+/// Tóm tắt sổ → metadata giao dịch. Hình dạng lạ thì ném: khoản nộp mang tóm tắt sai còn tệ hơn
+/// khoản nộp không mang gì, vì người đối chiếu sẽ tin nó.
+export function donationMetadata(summary) {
+  const keys = ["epoch", "tx_count", "total_lovelace", "merkle_root"];
+  const extra = Object.keys(summary ?? {}).filter((k) => !keys.includes(k));
+  if (summary === null || typeof summary !== "object" || extra.length) {
+    throw new Error(`tóm tắt sổ phải đúng các khoá ${keys.join(", ")}; thừa: ${extra.join(", ") || "(không phải object)"}`);
+  }
+  const ints = {};
+  for (const k of ["epoch", "tx_count", "total_lovelace"]) {
+    const v = summary[k];
+    if (!(typeof v === "number" && Number.isSafeInteger(v)) && !(typeof v === "string" && /^\d+$/.test(v))) {
+      throw new Error(`tóm tắt sổ: '${k}' phải là số nguyên không âm, nhận ${JSON.stringify(v)}`);
+    }
+    ints[k] = BigInt(v);
+    if (ints[k] < 0n) throw new Error(`tóm tắt sổ: '${k}' âm`);
+    // Số nguyên metadata tối đa 8 byte; chặn ở đây để lỗi nói đúng trường nào.
+    if (ints[k] > 18_446_744_073_709_551_615n) {
+      throw new Error(`tóm tắt sổ: '${k}' = ${v} vượt 2^64−1, metadata không mang được`);
+    }
+  }
+  if (typeof summary.merkle_root !== "string" || !/^[0-9a-f]{64}$/.test(summary.merkle_root)) {
+    throw new Error("tóm tắt sổ: 'merkle_root' phải là 64 ký tự hex thường (32 byte)");
+  }
+  // Ba số đi thẳng từ BigInt vào chuỗi JSON: qua `Number()` thì chuỗi số lớn hơn 2^53 bị làm
+  // tròn lặng lẽ (ví dụ "9007199254740993" thành 9007199254740992 trên chuỗi).
+  const json = JSON.stringify({
+    msg: [DONATION_MSG],
+    epoch: "__EPOCH__",
+    tx_count: "__TX_COUNT__",
+    total_lovelace: "__TOTAL__",
+    merkle_root: summary.merkle_root,
+  })
+    .replace('"__EPOCH__"', ints.epoch.toString())
+    .replace('"__TX_COUNT__"', ints.tx_count.toString())
+    .replace('"__TOTAL__"', ints.total_lovelace.toString());
+  const metadata = CML.Metadata.new();
+  metadata.set(DONATION_METADATA_LABEL, CML.encode_json_str_to_metadatum(json, CML.MetadataJsonSchema.NoConversions));
+  return CML.AuxiliaryData.new_shelley(metadata);
+}
+
 // ── Lệnh con ─────────────────────────────────────────────────────────────────
 
 /// `skipLocalChecks` chỉ dành cho bộ giả lập: bỏ phép kiểm "quỹ đủ cho lần nộp đầu" để dựng một
@@ -308,24 +358,30 @@ export async function open({ fundLovelace = DEFAULT_FUND, perEpoch = DEFAULT_PER
 
 /// `skipLocalChecks` chỉ dành cho bộ giả lập: dựng và nộp cả khi kịch bản biết trước validator
 /// sẽ từ chối, để đo chính validator chứ không đo phép kiểm của kịch bản.
-export async function donate({ skipLocalChecks = false } = {}) {
+export async function donate({ amount, summary, skipLocalChecks = false } = {}) {
+  const auxData = summary === undefined ? undefined : donationMetadata(summary);
   const { fund, schedule } = fundFromState();
   const lucid = await connect();
   const walletAddress = await lucid.wallet().address();
   const { utxo: fundUtxo, datum, strays } = await findFund(lucid, fund);
   const win = windowInCurrentEpoch(schedule);
-  const donation = datum.per_epoch;
-  if (fundUtxo.assets.lovelace < donation) {
+  const donation = amount ?? datum.per_epoch;
+  if (!skipLocalChecks && donation < datum.per_epoch) {
+    throw new Error(`khoản nộp ${donation} < per_epoch ${datum.per_epoch} — validator sẽ bác`);
+  }
+  if (fundUtxo.assets.lovelace < datum.per_epoch) {
     // Không chặn được bằng `skipLocalChecks`: lượng âm không dựng thành đầu ra được.
     throw new Error(
-      `quỹ cạn: còn ${fundUtxo.assets.lovelace} lovelace < per_epoch ${donation}. Quỹ không tự nộp ` +
+      `quỹ cạn: còn ${fundUtxo.assets.lovelace} lovelace < per_epoch ${datum.per_epoch}. Quỹ không tự nộp ` +
       `được nữa; chủ quỹ thu hồi bằng 'reclaim' sau ${datum.idle_epochs} epoch nằm yên`,
     );
   }
-  const nextLovelace = fundUtxo.assets.lovelace - donation;
+  // Quỹ góp đúng `per_epoch`; phần vượt (nếu có) ví nộp tự bỏ qua ô trả phí.
+  const nextLovelace = fundUtxo.assets.lovelace - datum.per_epoch;
+  const fromWallet = donation > datum.per_epoch ? donation - datum.per_epoch : 0n;
 
   console.log("epoch       ", win.epoch, "— nộp lần cuối ở epoch", datum.last_epoch, `(${strays} ô khác ở địa chỉ quỹ, bỏ qua)`);
-  console.log("quỹ         ", fundUtxo.assets.lovelace, "→", nextLovelace, "lovelace; nộp", donation);
+  console.log("quỹ         ", fundUtxo.assets.lovelace, "→", nextLovelace, "lovelace; nộp", donation, "— ví bù", fromWallet);
 
   const nextOutput = nextFundOutput(fund, datum, win.epoch, nextLovelace);
 
@@ -352,6 +408,13 @@ export async function donate({ skipLocalChecks = false } = {}) {
   // COLLATERAL_AT_RISK, phần còn lại của ô đặt cọc trả về ví qua collateral_return.
   const payer = funding[0];
   const collateral = funding[funding.length - 1];
+  // Ô trả phí phải gánh phần ví bù + phí + min-ADA của tiền thừa; 5 tADA là biên rộng cho hai thứ sau.
+  if (payer.assets.lovelace < fromWallet + 5_000_000n) {
+    throw new Error(
+      `ví nộp thiếu: ô chỉ-ADA lớn nhất ${payer.assets.lovelace} lovelace < phần ví bù ${fromWallet} + 5 tADA. ` +
+      `Gom ví thành một ô lớn hơn rồi chạy lại`,
+    );
+  }
 
   const txb = lucid.newTx().rawConfig().txBuilder;
   txb.set_validity_start_interval(BigInt(win.lowerSlot));
@@ -391,6 +454,7 @@ export async function donate({ skipLocalChecks = false } = {}) {
     CML.TransactionOutputBuilder.new().with_address(wallet).next()
       .with_value(assetsToValue({ lovelace: donation })).build(),
   );
+  if (auxData) txb.add_auxiliary_data(auxData);
   const built = txb.build(CML.ChangeSelectionAlgo.Default, wallet).build_unchecked();
 
   const oldBody = built.body();
@@ -412,12 +476,12 @@ export async function donate({ skipLocalChecks = false } = {}) {
     ["set_network_id", "network_id"], ["set_script_data_hash", "script_data_hash"],
     ["set_collateral_inputs", "collateral_inputs"], ["set_collateral_return", "collateral_return"],
     ["set_total_collateral", "total_collateral"], ["set_reference_inputs", "reference_inputs"],
-    ["set_required_signers", "required_signers"],
+    ["set_required_signers", "required_signers"], ["set_auxiliary_data_hash", "auxiliary_data_hash"],
   ];
   // Mọi trường tuỳ chọn khác của thân giao dịch Conway. Bản gốc mang bất kỳ trường nào trong số
   // này thì bản dựng lại sẽ LẶNG LẼ đánh rơi nó — ném lỗi thay vì nộp một giao dịch khác ý.
   const NOT_COPIED = [
-    "certs", "withdrawals", "auxiliary_data_hash", "mint", "voting_procedures",
+    "certs", "withdrawals", "mint", "voting_procedures",
     "proposal_procedures", "current_treasury_value", "donation",
   ];
   for (const getter of [...COPIED.map(([, g]) => g), ...NOT_COPIED]) {
@@ -436,6 +500,9 @@ export async function donate({ skipLocalChecks = false } = {}) {
     const v = oldBody[getter]();
     if (v !== undefined && v !== null) body[setter](v);
   }
+  if (auxData && body.auxiliary_data_hash() === undefined) {
+    throw new Error("có tóm tắt sổ mà thân giao dịch không mang auxiliary_data_hash — dừng");
+  }
   body.set_donation(donation);
   const cbor = CML.Transaction.new(body, built.witness_set(), true, built.auxiliary_data()).to_cbor_hex();
 
@@ -443,7 +510,7 @@ export async function donate({ skipLocalChecks = false } = {}) {
   const txHash = await signed.submit();
   console.log("tx          ", txHash, explorer(txHash));
   await awaitTx(lucid, txHash, "nộp kho bạc:");
-  saveState({ lastDonateTx: txHash, lastDonatedEpoch: win.epoch });
+  saveState({ lastDonateTx: txHash, lastDonatedEpoch: win.epoch, lastDonation: donation.toString() });
   return { txHash, cbor: signed.toCBOR(), epoch: win.epoch, donation };
 }
 
@@ -489,11 +556,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const big = (x, d) => (x === undefined ? d : BigInt(x));
   const commands = {
     open: () => open({ fundLovelace: big(args[0], DEFAULT_FUND), perEpoch: big(args[1], DEFAULT_PER_EPOCH), idleEpochs: big(args[2], DEFAULT_IDLE_EPOCHS) }),
-    donate: () => donate(),
+    donate: () => donate({
+      amount: args[0] === undefined || args[0] === "-" ? undefined : BigInt(args[0]),
+      summary: args[1] === undefined ? undefined : JSON.parse(readFileSync(args[1], "utf8")),
+    }),
     reclaim: () => reclaim(),
   };
   if (!commands[command]) {
-    console.error("dùng: 08_epoch_donation.mjs open [quỹ_lovelace] [per_epoch] [idle_epochs] | donate | reclaim");
+    console.error("dùng: 08_epoch_donation.mjs open [quỹ_lovelace] [per_epoch] [idle_epochs] | donate [khoản_lovelace|-] [tệp_tóm_tắt.json] | reclaim");
     process.exit(2);
   }
   await commands[command]();
