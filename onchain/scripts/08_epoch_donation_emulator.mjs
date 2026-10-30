@@ -223,6 +223,7 @@ await expectRejected(
   /failed script execution|Spend\[|validator|script/i,
 );
 // Khoản lớn hơn sàn kèm tóm tắt sổ: quỹ vẫn chỉ mất `per_epoch`, ví bù phần còn lại.
+// `epoch` = epoch được tất toán = epoch chi (N+1) − 1; `donate` ném nếu lệch.
 const SUMMARY = { epoch: N, tx_count: 7, total_lovelace: "30000000", merkle_root: "ab".repeat(32) };
 {
   const r = await donate({ amount: 3_000_000n, summary: SUMMARY });

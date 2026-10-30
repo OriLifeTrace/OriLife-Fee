@@ -233,10 +233,12 @@ node onchain/scripts/08_epoch_donation.mjs reclaim
 
 `donate` không đối số nộp đúng `per_epoch`. Nêu khoản lớn hơn thì quỹ vẫn chỉ góp `per_epoch`, ví
 nộp bù phần còn lại (đúng luật validator ở trên); khoản dưới `per_epoch` bị kịch bản bác. Tệp tóm
-tắt là sổ của epoch được tất toán, đi vào metadata nhãn 674 của giao dịch nộp:
+tắt là sổ của epoch được tất toán, đi vào metadata nhãn 674 của giao dịch nộp. Quy ước epoch: tóm
+tắt phải là epoch liền trước epoch của cửa sổ chi, `summary.epoch === epoch_nộp − 1` (nộp ở epoch
+322 thì tóm tắt epoch 321); lệch thì `donate` ném lỗi trước khi dựng giao dịch.
 
 ```json
-{ "epoch": 322, "tx_count": 7, "total_lovelace": "30000000", "merkle_root": "<64 ký tự hex>" }
+{ "epoch": 321, "tx_count": 7, "total_lovelace": "30000000", "merkle_root": "<64 ký tự hex>" }
 ```
 
 Metadata ra trên chuỗi: `{"msg": ["OriLife Covenant epoch donation"], "epoch", "tx_count",
@@ -261,6 +263,8 @@ Quỹ chạy thử trước đó (2026-10-29, validator ở commit `5282e3a`, đ
 `addr_test1wpjn5fmw0vpp3078kyxwnep528cf2zvypafu0mnj59xlxrczf07k5`) đã nộp epoch 322 và theo luật
 cũ: thu hồi từ epoch ≥325 phải dùng `plutus.json` của `5282e3a`, vì bản vá `owner` sai độ dài 28
 byte đã đổi script hash.
+Con trỏ: `5282e3a` = commit đầu nhánh `claude/epoch-treasury-donation` lúc mở quỹ cũ (chứa
+`plutus.json` của validator đó); UTxO hạt giống của quỹ cũ = `7f13aab3e020d4c9cd296b0afec0c6e8ba38a4d9d0523e00a8281ef254fd249e#3`.
 
 `08_epoch_donation_emulator.mjs` gọi đúng các hàm của `08` trên Emulator với epoch giả 20 phút:
 mở quỹ → nộp epoch N → nộp lần hai cùng epoch N (validator bác) → nộp khoản dưới `per_epoch` ở

@@ -227,7 +227,12 @@ function nextFundOutput(fund, datum, epoch, lovelace) {
 
 /// Tóm tắt sổ → metadata giao dịch. Hình dạng lạ thì ném: khoản nộp mang tóm tắt sai còn tệ hơn
 /// khoản nộp không mang gì, vì người đối chiếu sẽ tin nó.
-export function donationMetadata(summary) {
+/// Quy ước epoch: `summary.epoch` là epoch được TẤT TOÁN, luôn liền trước epoch chi (`windowEpoch`,
+/// epoch của cửa sổ giao dịch nộp): `summary.epoch === windowEpoch − 1`. Lệch thì ném.
+export function donationMetadata(summary, windowEpoch) {
+  if (!Number.isSafeInteger(windowEpoch)) {
+    throw new Error(`donationMetadata cần epoch của cửa sổ chi (số nguyên), nhận ${JSON.stringify(windowEpoch)}`);
+  }
   const keys = ["epoch", "tx_count", "total_lovelace", "merkle_root"];
   const extra = Object.keys(summary ?? {}).filter((k) => !keys.includes(k));
   if (summary === null || typeof summary !== "object" || extra.length) {
@@ -245,6 +250,12 @@ export function donationMetadata(summary) {
     if (ints[k] > 18_446_744_073_709_551_615n) {
       throw new Error(`tóm tắt sổ: '${k}' = ${v} vượt 2^64−1, metadata không mang được`);
     }
+  }
+  if (ints.epoch !== BigInt(windowEpoch) - 1n) {
+    throw new Error(
+      `tóm tắt sổ epoch ${ints.epoch} nhưng giao dịch nộp ở epoch ${windowEpoch}: ` +
+        `chỉ nộp tóm tắt của epoch liền trước (${windowEpoch - 1})`,
+    );
   }
   if (typeof summary.merkle_root !== "string" || !/^[0-9a-f]{64}$/.test(summary.merkle_root)) {
     throw new Error("tóm tắt sổ: 'merkle_root' phải là 64 ký tự hex thường (32 byte)");
@@ -359,12 +370,12 @@ export async function open({ fundLovelace = DEFAULT_FUND, perEpoch = DEFAULT_PER
 /// `skipLocalChecks` chỉ dành cho bộ giả lập: dựng và nộp cả khi kịch bản biết trước validator
 /// sẽ từ chối, để đo chính validator chứ không đo phép kiểm của kịch bản.
 export async function donate({ amount, summary, skipLocalChecks = false } = {}) {
-  const auxData = summary === undefined ? undefined : donationMetadata(summary);
   const { fund, schedule } = fundFromState();
   const lucid = await connect();
   const walletAddress = await lucid.wallet().address();
   const { utxo: fundUtxo, datum, strays } = await findFund(lucid, fund);
   const win = windowInCurrentEpoch(schedule);
+  const auxData = summary === undefined ? undefined : donationMetadata(summary, win.epoch);
   const donation = amount ?? datum.per_epoch;
   if (!skipLocalChecks && donation < datum.per_epoch) {
     throw new Error(`khoản nộp ${donation} < per_epoch ${datum.per_epoch} — validator sẽ bác`);
