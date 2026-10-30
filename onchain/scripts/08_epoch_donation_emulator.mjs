@@ -194,8 +194,14 @@ emulator.awaitBlock(1);
 {
   const r = await donate();
   check(r.epoch === N, `nộp trong epoch mở quỹ N = ${N}`);
-  const body = CML.Transaction.from_cbor_hex(r.cbor).body();
+  const tx = CML.Transaction.from_cbor_hex(r.cbor);
+  const body = tx.body();
   check(body.donation() === 1_000_000n, `thân giao dịch mang treasury_donation = ${body.donation()}`);
+  // Không có tóm tắt sổ thì không có metadata nào — không nộp một tóm tắt rỗng giả.
+  check(
+    tx.auxiliary_data() === undefined && body.auxiliary_data_hash() === undefined,
+    "không tóm tắt sổ: giao dịch không mang metadata, không auxiliary_data_hash",
+  );
   const f = await fundState();
   check(f.lovelace === 9_000_000n && f.datum.last_epoch === BigInt(N), "quỹ còn 9 tADA, last_epoch = N");
 }
@@ -208,9 +214,30 @@ emulator.awaitBlock(nextEpochStartBlocks());
 check(epochNow() === N + 1, `đồng hồ sang epoch N+1 = ${N + 1}`);
 currentStep = "donate epoch N+1";
 console.log(`\n━━ donate (epoch N+1 = ${epochNow()}) ━━`);
+// Khoản dưới sàn: kịch bản tự bác; vòng qua kịch bản thì validator bác (`donation_at_least`).
+// Khoản vòng qua phải trên min-UTxO của ô giữ chỗ, không thì bộ dựng bác trước khi tới validator.
+await expectScriptRefusal("donate khoản < per_epoch", () => donate({ amount: 500_000n }), /< per_epoch/);
+await expectRejected(
+  "donate khoản < per_epoch, bỏ kiểm cục bộ",
+  () => donate({ amount: 990_000n, skipLocalChecks: true }),
+  /failed script execution|Spend\[|validator|script/i,
+);
+// Khoản lớn hơn sàn kèm tóm tắt sổ: quỹ vẫn chỉ mất `per_epoch`, ví bù phần còn lại.
+// `epoch` = epoch được tất toán = epoch chi (N+1) − 1; `donate` ném nếu lệch.
+const SUMMARY = { epoch: N, tx_count: 7, total_lovelace: "30000000", merkle_root: "ab".repeat(32) };
 {
-  const r = await donate();
+  const r = await donate({ amount: 3_000_000n, summary: SUMMARY });
   check(r.epoch === N + 1, "nộp trong epoch N+1");
+  const tx = CML.Transaction.from_cbor_hex(r.cbor);
+  check(tx.body().donation() === 3_000_000n, `thân giao dịch mang treasury_donation = ${tx.body().donation()}`);
+  const md = tx.auxiliary_data()?.metadata()?.get(674n);
+  const back = md && JSON.parse(CML.decode_metadatum_to_json_str(md, CML.MetadataJsonSchema.NoConversions));
+  check(
+    back?.epoch === N && back.tx_count === 7 && back.total_lovelace === 30_000_000 &&
+      back.merkle_root === SUMMARY.merkle_root && back.msg?.[0] === "OriLife Covenant epoch donation",
+    `metadata 674 đọc lại khớp tóm tắt sổ (${JSON.stringify(back)})`,
+  );
+  check(tx.body().auxiliary_data_hash() !== undefined, "thân giao dịch mang auxiliary_data_hash");
   const f = await fundState();
   check(f.lovelace === 8_000_000n && f.datum.last_epoch === BigInt(N + 1), "quỹ còn 8 tADA, last_epoch = N+1");
 }
