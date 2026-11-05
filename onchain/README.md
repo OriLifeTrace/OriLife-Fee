@@ -12,6 +12,10 @@ hai là hằng số biên dịch, không có máng giá. Cái hợp đồng bả
 đã ghi là phải nộp"**, và chỉ vậy. Đó vẫn mạnh hơn một lời hứa, nhưng nó không phải "10%
 doanh thu".
 
+**Tên gọi.** Tên công khai của kho này là **Fee Account**. Trong mã, gói Aiken vẫn mang tên
+`orilife_treasury` (thư mục `orilife_treasury/`, tiền tố `orilife_treasury/…` trong
+`plutus.json`). Đổi tên gói không đổi băm script nên chỉ đổi nhãn; hai tên chỉ cùng một thứ.
+
 ## Vì sao ép được bằng mã
 
 Từ kỷ nguyên Conway, thân giao dịch Cardano có trường `treasury_donation` — số lovelace mà
@@ -378,6 +382,13 @@ cũ chưa đóng. `carpName` trong tệp là tên tài sản dạng **hex**; `bu
 dạng chữ. Mảng `strayOpen` giữ instance còn mở nhưng KHÔNG phải instance hiện hành (xem ghi chú
 trong từng bản ghi) — phí chỉ đi vào hộp thư của instance ở gốc tệp.
 
+Instance ở gốc tệp được mở TRƯỚC chốt giữ nguyên token lạ trong ô sổ (mục 10 ở đầu
+`fee_vault.ak`), nên nó không chạy `fee_vault` trong `plutus.json` hôm nay. Mọi kịch bản suy
+địa chỉ kho từ `plutus.json` (`buildScripts` trong `common.mjs`), nên ở mã hôm nay `03`, `04`,
+`06`, `07` trỏ tới địa chỉ của bản mới, không thấy ô sổ của instance đang chạy và dừng ở bước
+tìm ô sổ. Muốn gom, trích hay đóng instance đó thì chạy kịch bản từ commit `4cc29e7` (bản
+trước chốt này). Thay instance = đóng bằng `06` ở `4cc29e7`, rồi `02` ở mã hôm nay.
+
 `lifecycle_emulator.mjs` chạy ĐÚNG các kịch bản trên (không bản sao) trên Emulator của Lucid,
 với tệp trạng thái tạm. Emulator không tự chạy validator lúc nhận giao dịch, nên bộ chạy chạy
 lại phase-two (`eval_phase_two_raw`, cùng bộ đánh giá Lucid dùng) cho MỌI giao dịch có
@@ -435,22 +446,23 @@ nằm lại đó làm bằng chứng thay vì làm lời kể.
 ## Chi phí thực thi đo trên Emulator
 
 Đo bằng `lifecycle_emulator.mjs` (phase-two trên giao dịch thật sắp nộp, không phải ước
-lượng); số chạy lại được bất cứ lúc nào, bảng dưới là một lần chạy ngày 2026-10-03 (bản có
-`operator_key` trong datum và `Rotate`). Trần mỗi giao dịch của Preprod là 14 M bộ nhớ / 10 G bước.
+lượng); số chạy lại được bất cứ lúc nào, bảng dưới là một lần chạy ngày 2026-11-05 (bản có
+chốt giữ nguyên token ngoài ADA và CARP trong ô sổ). Trần mỗi giao dịch của Preprod là 14 M bộ
+nhớ / 10 G bước.
 
 | Giao dịch | Redeemer | Bộ nhớ | Bước |
 |---|---|---|---|
-| mở kho | đúc NFT `Open` | 122 354 | 43 483 039 |
-| mở kho | đăng ký credential hộp thư | 17 049 | 4 605 712 |
-| gom 29 ô hộp thư + 2 ô lạc | ô sổ `Collect` | 1 518 263 | 511 642 871 |
-| gom 29 ô hộp thư + 2 ô lạc | `withdraw` hộp thư (cả lô) | 1 143 722 | 378 332 339 |
-| gom 29 ô hộp thư + 2 ô lạc | **cả giao dịch** (33 redeemer: 32 spend + 1 withdraw) | **6 704 120** | **2 979 500 282** |
-| trích 10% | ô sổ `Skim` | 400 750 | 136 498 584 |
+| mở kho | đúc NFT `Open` | 121 892 | 43 310 081 |
+| mở kho | đăng ký credential hộp thư | 17 649 | 4 701 712 |
+| gom 29 ô hộp thư + 2 ô lạc | ô sổ `Collect` | 1 591 247 | 539 060 740 |
+| gom 29 ô hộp thư + 2 ô lạc | `withdraw` hộp thư (cả lô) | 1 416 264 | 475 440 136 |
+| gom 29 ô hộp thư + 2 ô lạc | **cả giao dịch** (33 redeemer: 32 spend + 1 withdraw) | **7 087 868** | **3 114 541 443** |
+| trích 10% | ô sổ `Skim` | 469 762 | 161 281 301 |
 | đổi + nộp | ô kho tạm `Donate` | 165 242 | 59 792 207 |
-| xoay khoá vận hành | ô sổ `Rotate` | 324 647 | 107 538 944 |
-| đóng kho | ô sổ `Close` + đốt NFT | 177 640 + 33 494 | 57 079 870 + 10 235 544 |
+| xoay khoá vận hành | ô sổ `Rotate` | 389 765 | 129 744 184 |
+| đóng kho | ô sổ `Close` + đốt NFT | 189 526 + 33 494 | 60 599 434 + 10 235 544 |
 
-Mỗi ô hộp thư tự nó rẻ (37 K → 147 K bộ nhớ, tăng dần theo vị trí trong giao dịch); phần nặng là
+Mỗi ô hộp thư tự nó rẻ (34 K → 147 K bộ nhớ, tăng dần theo vị trí trong giao dịch); phần nặng là
 ô sổ và mỗi ô lạc, vì cả hai cộng CARP trên mọi đầu vào. Vì vậy `03` đặt trần riêng cho ô lạc (4)
 thấp hơn trần ô hộp thư (30).
 

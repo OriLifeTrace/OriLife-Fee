@@ -86,6 +86,11 @@
 ////    khoá hiện tại VÀ khoá mới cùng ký. `Collect`/`Skim`/`Operate` ép khoá giữ nguyên.
 ////    `Close` vẫn bỏ rơi hộp thư nếu còn ô CARP — hợp đồng không thấy UTxO ngoài giao dịch
 ////    nên không chặn được; `06_close_vault.mjs` chặn ở ngoài chuỗi.
+////
+//// 10. Phần ngoài ADA và CARP của ô sổ đi ra phải BẰNG phần đó của ô sổ đi vào. Trước đây
+////    `shape_ok` chỉ ép địa chỉ, NFT, ADA không giảm; `Collect` và `Skim` không đòi chữ ký
+////    nên bất kỳ ai tước được mọi token khác CARP đang nằm trong ô sổ. Nay ô sổ không mất
+////    và cũng không nhận thêm token lạ; NFT sổ giữ đúng số lượng. CARP vẫn do từng nhánh ép.
 //// ─────────────────────────────────────────────────────────────────────────────
 
 use aiken/collection/dict
@@ -94,7 +99,7 @@ use aiken/interval.{Finite}
 use cardano/address.{Script, from_script, from_verification_key}
 use cardano/assets.{
   AssetName, PolicyId, Value, add, from_asset, from_lovelace, lovelace_of,
-  quantity_of, tokens,
+  quantity_of, tokens, without_lovelace,
 }
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
@@ -304,6 +309,19 @@ validator fee_vault(
               ),
               // Nghĩa vụ không bao giờ âm: `skimmed` không vượt phần tính trên `collected`.
               owed >= 0,
+              // Ngoài ADA và CARP, ô sổ giữ nguyên từng token, kể cả NFT sổ. Không có câu
+              // này thì `Collect`/`Skim` (không ai ký) tước được token lạ khỏi ô sổ.
+              add(
+                without_lovelace(continuing.value),
+                carp_policy,
+                carp_name,
+                -carp_after,
+              ) == add(
+                without_lovelace(own_input.output.value),
+                carp_policy,
+                carp_name,
+                -carp_before,
+              ),
             }
 
           let action_ok =
@@ -2422,6 +2440,203 @@ test operate_cannot_change_the_operator_key() {
         to(operator_key, 800),
       ],
       [operator_key, rotated_key],
+      None,
+    ),
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token ngoài ADA và CARP trong ô sổ (ghi chú 10). `Collect` và `Skim` không đòi chữ ký,
+// nên mỗi bài âm dưới đây có một người lạ dựng giao dịch; bài dương cùng khung giữ token
+// lạ trong ô sổ để thấy chỉ phép giữ nguyên token mới chặn.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const foreign_policy: ByteArray =
+  #"abababababababababababababababababababababababababababab"
+
+/// Ô sổ kèm `q` token lạ.
+fn vault_utxo_with_foreign(
+  lovelace: Int,
+  carp: Int,
+  q: Int,
+  d: VaultDatum,
+) -> Output {
+  let o = vault_utxo(lovelace, carp, d)
+  Output { ..o, value: add(o.value, foreign_policy, "JUNK", q) }
+}
+
+/// Ví người lạ nộp `carp` CARP cho `Collect`.
+fn stranger_pays_carp(carp: Int) -> Input {
+  input_from(ref_at(7), stranger_with(value_with_carp(5_000_000, carp)))
+}
+
+fn collect_one_carp(vault_out: Output, extra: List<Output>) -> Bool {
+  let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
+  run(
+    before,
+    Collect { amount: 1 },
+    tx(
+      [
+        input_from(
+          ref_at(0),
+          vault_utxo_with_foreign(2_000_000, 0, 1_000, before),
+        ),
+        stranger_pays_carp(1),
+      ],
+      [vault_out, ..extra],
+      [],
+      None,
+    ),
+  )
+}
+
+fn skim_hundred(vault_out: Output, extra: List<Output>) -> Bool {
+  let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
+  run(
+    before,
+    Skim { amount: 100 },
+    tx(
+      [
+        input_from(
+          ref_at(0),
+          vault_utxo_with_foreign(2_000_000, 1_000, 1_000, before),
+        ),
+      ],
+      [vault_out, skim_output(100), ..extra],
+      [],
+      None,
+    ),
+  )
+}
+
+/// CỰC DƯƠNG. `Collect` giữ nguyên 1000 token lạ trong ô sổ.
+test collect_keeps_foreign_tokens_in_the_vault() {
+  collect_one_carp(
+    vault_utxo_with_foreign(
+      2_000_000,
+      1,
+      1_000,
+      VaultDatum { collected: 1, skimmed: 0, operator_key },
+    ),
+    [stranger_with(from_lovelace(5_000_000))],
+  )
+}
+
+/// Người lạ nộp 1 CARP qua `Collect` và mang 1000 token lạ ra ví mình.
+test collect_cannot_strip_foreign_tokens() {
+  !collect_one_carp(
+    vault_utxo(
+      2_000_000,
+      1,
+      VaultDatum { collected: 1, skimmed: 0, operator_key },
+    ),
+    [
+      stranger_with(
+        from_lovelace(5_000_000) |> add(foreign_policy, "JUNK", 1_000),
+      ),
+    ],
+  )
+}
+
+/// Lấy một phần cũng bị bác.
+test collect_cannot_strip_part_of_the_foreign_tokens() {
+  !collect_one_carp(
+    vault_utxo_with_foreign(
+      2_000_000,
+      1,
+      999,
+      VaultDatum { collected: 1, skimmed: 0, operator_key },
+    ),
+    [stranger_with(from_lovelace(5_000_000) |> add(foreign_policy, "JUNK", 1))],
+  )
+}
+
+/// Đính thêm token lạ vào ô sổ qua `Collect`.
+test collect_cannot_add_foreign_tokens() {
+  !collect_one_carp(
+    vault_utxo_with_foreign(
+      2_000_000,
+      1,
+      1_001,
+      VaultDatum { collected: 1, skimmed: 0, operator_key },
+    ),
+    [stranger_with(from_lovelace(5_000_000))],
+  )
+}
+
+/// CỰC DƯƠNG. `Skim` giữ nguyên token lạ trong ô sổ.
+test skim_keeps_foreign_tokens_in_the_vault() {
+  skim_hundred(
+    vault_utxo_with_foreign(
+      2_000_000,
+      900,
+      1_000,
+      VaultDatum { collected: 1_000, skimmed: 100, operator_key },
+    ),
+    [],
+  )
+}
+
+/// `Skim` không cần nộp CARP nào mà vẫn mang được token lạ ra.
+test skim_cannot_strip_foreign_tokens() {
+  !skim_hundred(
+    vault_utxo(
+      2_000_000,
+      900,
+      VaultDatum { collected: 1_000, skimmed: 100, operator_key },
+    ),
+    [
+      stranger_with(
+        from_lovelace(2_000_000) |> add(foreign_policy, "JUNK", 1_000),
+      ),
+    ],
+  )
+}
+
+/// `Operate` có chữ ký người vận hành nhưng chỉ được rút CARP, không rút token lạ.
+test operate_cannot_strip_foreign_tokens() {
+  let state = rotating_ledger()
+  !run(
+    state,
+    Operate,
+    tx(
+      [
+        input_from(
+          ref_at(0),
+          vault_utxo_with_foreign(2_000_000, 900, 1_000, state),
+        ),
+      ],
+      [
+        vault_utxo(2_000_000, 100, state),
+        wallet_output(
+          from_verification_key(operator_key),
+          value_with_carp(2_000_000, 800) |> add(foreign_policy, "JUNK", 1_000),
+        ),
+      ],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// CỰC DƯƠNG cho bài trên: cùng khung, token lạ ở lại.
+test operate_keeps_foreign_tokens_in_the_vault() {
+  let state = rotating_ledger()
+  run(
+    state,
+    Operate,
+    tx(
+      [
+        input_from(
+          ref_at(0),
+          vault_utxo_with_foreign(2_000_000, 900, 1_000, state),
+        ),
+      ],
+      [
+        vault_utxo_with_foreign(2_000_000, 100, 1_000, state),
+        to(operator_key, 800),
+      ],
+      [operator_key],
       None,
     ),
   )

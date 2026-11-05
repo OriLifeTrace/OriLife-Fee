@@ -10,7 +10,7 @@ carried both stale and never-true counts before (see "History").
 | Part | Where | State |
 |---|---|---|
 | MAGIC pricing, OriLife side | `src/`, `tests/` | parse `op_declaration`, quote against a PriceParam beacon datum, plan ConsumeMAGIC — pure code |
-| Fee vault + fee inbox + donation escrow | `onchain/` | running on Preprod: the instance in `onchain/scripts/deployed_preprod.json` (`openTx`, `inboxRegisterTx` confirmed on Preprod, Koios `tx_status`, 2026-10-18); auction parameters are test values; nothing on Mainnet |
+| Fee vault + fee inbox + donation escrow | `onchain/` | deployed on Preprod (the instance at the root of `onchain/scripts/deployed_preprod.json`) and idle since epoch 317: Koios on 2026-11-05 (epoch 323) shows the inbox at 0 balance after 2 transactions, the vault holding 5,000,000 lovelace after 2, the escrow with none. No service builds a fee output to the inbox; only the manual scripts `01`–`07` drive it. The deployed instance predates the foreign-token guard (item 8), so it does not run the `fee_vault` in `plutus.json`. Auction parameters are test values; nothing on Mainnet |
 | LAMP prototype | removed; record in `docs/lamp-prototype.md` | Preview custody address still holds assets |
 
 ## Checks — 2026-10-02
@@ -104,6 +104,19 @@ the whole suite run again; every one turned it red:
 7. Not pinned by the checks above: the ledger rules of Preprod itself (value balance, the
    `treasury_donation` field, script stake credential registration) — the Emulator does not
    enforce them; and the auction parameters are test values for the Preprod instance only.
+
+## Onchain — foreign tokens in the ledger UTxO (2026-11-05)
+
+8. `shape_ok` in `fee_vault.ak` now requires the continuing ledger UTxO to carry exactly the
+   non-ADA, non-CARP value of the ledger input, the ledger NFT included (`fee_vault.ak` header,
+   item 10). Before, it pinned only the address, the NFT and lovelace not decreasing, and
+   `Collect` and `Skim` need no signature, so anyone could strip any token other than CARP from
+   the ledger UTxO. The `fee_vault` hash changes; this revision has not been deployed. The
+   scripts derive the vault address from `plutus.json`, so driving the deployed instance
+   (collect, skim, close, rotate) means running them from `4cc29e7`. Checks:
+   `aiken check` 319 / 319; replacing the new condition with `True` turns exactly the five
+   strip/add tests red; `lifecycle_emulator.mjs` ends with "ĐẠT"; costs re-measured in
+   `onchain/README.md`, section "Chi phí thực thi đo trên Emulator".
 
 ## History
 
