@@ -56,10 +56,11 @@ Sổ nằm trong datum, ai cũng đọc được thẳng từ UTxO:
 
 | Lệnh | Ai gọi được | Luật |
 |---|---|---|
-| `Collect { amount }` | bất kỳ ai | `collected` tăng ĐÚNG bằng lượng CARP thật sự vào ô sổ, và không ít hơn tổng CARP của MỌI đầu vào khoá bằng script khác trong giao dịch; `operator_key` giữ nguyên |
-| `Skim { amount }` | bất kỳ ai | phần trích đi đúng về kho tạm, đúng instance kho phí này, không vượt nghĩa vụ, và mở phiên đấu giá tại đúng cận trên khoảng hiệu lực; `operator_key` giữ nguyên |
-| `Operate` | chỉ khoá vận hành (trong datum đầu vào) | chỉ RÚT được, không nạp được; phần còn lại phải **phủ được nghĩa vụ còn nợ**; `operator_key` giữ nguyên |
-| `Rotate` | khoá vận hành hiện tại **và** khoá mới cùng ký | ô sổ ở lại đúng địa chỉ, giá trị y nguyên (ADA, NFT, CARP, token khác), `collected`/`skimmed` y nguyên; chỉ `operator_key` đổi; không nhận ô lạc có CARP |
+| `Open` (đúc NFT sổ) | ai tiêu được UTxO hạt giống, kèm chữ ký của `operator_key` ghi trong datum | một lần duy nhất; đúng một ô ở địa chỉ kho; sổ trắng `collected = skimmed = 0`; ô sổ chỉ mang ADA và đúng một NFT sổ (không CARP, không token khác) |
+| `Collect { amount }` | bất kỳ ai | `collected` tăng ĐÚNG bằng lượng CARP thật sự vào ô sổ, và không ít hơn tổng CARP của MỌI đầu vào khoá bằng script khác trong giao dịch; phần token ngoài ADA và CARP của ô sổ giữ nguyên; `operator_key` giữ nguyên |
+| `Skim { amount }` | bất kỳ ai | phần trích đi đúng về kho tạm, đúng instance kho phí này, không vượt nghĩa vụ, và mở phiên đấu giá tại đúng cận trên khoảng hiệu lực; phần token ngoài ADA và CARP của ô sổ giữ nguyên; `operator_key` giữ nguyên |
+| `Operate` | chỉ khoá vận hành (trong datum đầu vào) | chỉ RÚT được, không nạp được; phần còn lại phải **phủ được nghĩa vụ còn nợ**; phần token ngoài ADA và CARP của ô sổ giữ nguyên; `operator_key` giữ nguyên |
+| `Rotate` | khoá vận hành hiện tại **và** khoá mới cùng ký | ô sổ ở lại đúng địa chỉ, giá trị y nguyên (ADA, NFT sổ, CARP), `collected`/`skimmed` y nguyên; chỉ `operator_key` đổi; không nhận ô lạc có CARP |
 | `Close` | chỉ khoá vận hành (trong datum đầu vào) | chỉ khi nghĩa vụ đã trả HẾT; đốt NFT sổ; không để lại ô kho nào |
 
 **Xoay khoá vận hành là `Rotate`, không phải `Close`.** `Close` là tắt VĨNH VIỄN: NFT sổ bị đốt,
