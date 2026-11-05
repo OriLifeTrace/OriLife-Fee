@@ -447,12 +447,13 @@ nằm lại đó làm bằng chứng thay vì làm lời kể.
 
 Đo bằng `lifecycle_emulator.mjs` (phase-two trên giao dịch thật sắp nộp, không phải ước
 lượng); số chạy lại được bất cứ lúc nào, bảng dưới là một lần chạy ngày 2026-11-05 (bản có
-chốt giữ nguyên token ngoài ADA và CARP trong ô sổ). Trần mỗi giao dịch của Preprod là 14 M bộ
-nhớ / 10 G bước.
+chốt giữ nguyên token ngoài ADA và CARP trong ô sổ). Riêng dòng đúc NFT `Open` đo lại ngày
+2026-11-06, sau khi `Open` đòi ô sổ mới mở chỉ mang ADA và đúng một NFT sổ. Trần mỗi giao dịch
+của Preprod là 14 M bộ nhớ / 10 G bước.
 
 | Giao dịch | Redeemer | Bộ nhớ | Bước |
 |---|---|---|---|
-| mở kho | đúc NFT `Open` | 121 892 | 43 310 081 |
+| mở kho | đúc NFT `Open` | 135 701 | 48 765 883 |
 | mở kho | đăng ký credential hộp thư | 17 649 | 4 701 712 |
 | gom 29 ô hộp thư + 2 ô lạc | ô sổ `Collect` | 1 591 247 | 539 060 740 |
 | gom 29 ô hộp thư + 2 ô lạc | `withdraw` hộp thư (cả lô) | 1 416 264 | 475 440 136 |

@@ -91,6 +91,8 @@
 ////    `shape_ok` chỉ ép địa chỉ, NFT, ADA không giảm; `Collect` và `Skim` không đòi chữ ký
 ////    nên bất kỳ ai tước được mọi token khác CARP đang nằm trong ô sổ. Nay ô sổ không mất
 ////    và cũng không nhận thêm token lạ; NFT sổ giữ đúng số lượng. CARP vẫn do từng nhánh ép.
+////    Chốt này chỉ giữ nguyên thứ đã có, nên `Open` ép ô sổ mới mở chỉ mang ADA và đúng một
+////    NFT sổ: token lạ nhét vào lúc mở sẽ không bao giờ rời ô sổ được.
 //// ─────────────────────────────────────────────────────────────────────────────
 
 use aiken/collection/dict
@@ -177,6 +179,14 @@ validator fee_vault(
               opened.reference_script == None,
               // Mở kho kèm CARP là nạp không ghi sổ: số CARP đó không bao giờ sinh nghĩa vụ.
               quantity_of(opened.value, carp_policy, carp_name) == 0,
+              // Ngoài ADA, ô sổ mới mở chỉ mang đúng một NFT sổ. Các nhánh tiêu ép phần
+              // ngoài ADA và CARP giữ nguyên từ ô vào sang ô ra (ghi chú 10), nên token lạ
+              // nhét vào lúc mở sẽ nằm lì trong ô sổ suốt đời kho: chốt đó không bao lúc mở.
+              without_lovelace(opened.value) == from_asset(
+                policy_id,
+                vault_nft_name,
+                1,
+              ),
             }
           }
           _ -> False
@@ -2638,6 +2648,93 @@ test operate_keeps_foreign_tokens_in_the_vault() {
       ],
       [operator_key],
       None,
+    ),
+  )
+}
+
+/// Ô sổ cộng thêm một token lạ khác loại (`EXTRA`) bên cạnh 1000 `JUNK` sẵn có.
+fn with_extra_foreign(o: Output) -> Output {
+  Output { ..o, value: add(o.value, foreign_policy, "EXTRA", 1) }
+}
+
+/// Cùng khung với `skim_keeps_foreign_tokens_in_the_vault`, khác đúng một token lạ mới
+/// đính vào ô sổ đi ra. `Skim` không đòi chữ ký nên ai cũng đính được.
+test skim_cannot_add_foreign_tokens() {
+  !skim_hundred(
+    with_extra_foreign(
+      vault_utxo_with_foreign(
+        2_000_000,
+        900,
+        1_000,
+        VaultDatum { collected: 1_000, skimmed: 100, operator_key },
+      ),
+    ),
+    [],
+  )
+}
+
+/// Cùng khung với `operate_keeps_foreign_tokens_in_the_vault`, khác đúng một token lạ mới
+/// đính vào ô sổ đi ra. Chữ ký người vận hành không mở quyền đổi phần ngoài ADA và CARP.
+test operate_cannot_add_foreign_tokens() {
+  let state = rotating_ledger()
+  !run(
+    state,
+    Operate,
+    tx(
+      [
+        input_from(
+          ref_at(0),
+          vault_utxo_with_foreign(2_000_000, 900, 1_000, state),
+        ),
+      ],
+      [
+        with_extra_foreign(
+          vault_utxo_with_foreign(2_000_000, 100, 1_000, state),
+        ),
+        to(operator_key, 800),
+      ],
+      [operator_key],
+      None,
+    ),
+  )
+}
+
+/// Mở kho kèm token lạ. Các nhánh tiêu chỉ ép giữ nguyên phần ngoài ADA và CARP, nên token
+/// nhét vào lúc mở sẽ nằm lì trong ô sổ; chỉ chốt ở `Open` chặn được. Cùng khung với
+/// `open_mints_exactly_one_nft_to_the_enterprise_vault_address_with_an_empty_ledger`.
+test open_rejects_a_foreign_token_in_the_opening_output() {
+  !run_mint(
+    Open,
+    open_tx(
+      [wallet_input(seed_ref)],
+      [
+        script_output(
+          vault_hash,
+          with_vault_nft(from_lovelace(2_000_000))
+            |> add(foreign_policy, "JUNK", 1),
+          inline(empty_ledger()),
+        ),
+      ],
+      one_nft(),
+    ),
+  )
+}
+
+/// CỰC DƯƠNG cho bài trên: chốt chỉ soi phần ngoài ADA, nên ADA giữ chỗ bao nhiêu cũng mở
+/// được. Phân biệt chốt đúng với một phép so cả giá trị (ADA cố định).
+test open_accepts_any_lovelace_beside_the_single_nft() {
+  run_mint(
+    Open,
+    open_tx(
+      [wallet_input(seed_ref)],
+      [
+        script_output(
+          vault_hash,
+          with_vault_nft(from_lovelace(7_500_000)),
+          inline(empty_ledger()),
+        ),
+      ],
+      one_nft(),
     ),
   )
 }

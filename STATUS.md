@@ -114,9 +114,15 @@ the whole suite run again; every one turned it red:
    the ledger UTxO. The `fee_vault` hash changes; this revision has not been deployed. The
    scripts derive the vault address from `plutus.json`, so driving the deployed instance
    (collect, skim, close, rotate) means running them from `4cc29e7`. Checks:
-   `aiken check` 319 / 319; replacing the new condition with `True` turns exactly the five
-   strip/add tests red; `lifecycle_emulator.mjs` ends with "ĐẠT"; costs re-measured in
+   `aiken check` 323 / 323; replacing the new condition with `True` turns exactly the seven
+   strip/add tests red (7 / 323); `lifecycle_emulator.mjs` ends with "ĐẠT"; costs re-measured in
    `onchain/README.md`, section "Chi phí thực thi đo trên Emulator".
+9. `Open` now requires the new ledger UTxO to hold nothing but lovelace and exactly one ledger
+   NFT (`without_lovelace(opened.value) == from_asset(policy_id, vault_nft_name, 1)`). Item 8
+   only keeps the non-ADA, non-CARP value equal from input to output, so a token put in at
+   opening would stay in the ledger UTxO for the life of the vault. Checks: replacing this
+   condition with `True` turns exactly `open_rejects_a_foreign_token_in_the_opening_output` red
+   (1 / 323); the Open row of the cost table was re-measured on 2026-11-06.
 
 ## History
 
