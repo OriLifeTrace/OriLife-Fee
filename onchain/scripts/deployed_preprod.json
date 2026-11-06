@@ -39,22 +39,7 @@
       "donatedLovelace": "1000000",
       "closeTx": "e2cf1e27ccabbcbd32727f583bceb2959907b5ae52c8df4f49df5d6c7b347702",
       "closedAt": "addr_test1qrqzj0xdt0gxr4vsxscwyef9nzwpe06sgx5cm4khut9xz58y0qah7hsadf9kfzn3yn5pq6raul02jnjn7x30a8gtyafqfzdt7v"
-    }
-  ],
-  "seed": {
-    "txHash": "e629ec175a4fddb8561a12f37bad6d100a1b45820db569dfb2a860ac02932a9a",
-    "outputIndex": 1
-  },
-  "escrowAddress": "addr_test1wzg903d252t8lyn2w36qng4umauscej6vpdwlh8ae83cl0gqp9vt7",
-  "escrowHash": "9057c5aaa2967f926a747409a2bcdf790c665a605aefdcfdc9e38fbd",
-  "vaultAddress": "addr_test1wpprkuz43k844dq53pcsw3hn29sjm34sq22rdl72cmk30jgjl9net",
-  "vaultHash": "423b70558d8f5ab41488710746f351612dc6b0029436ffcac6ed17c9",
-  "vaultNftUnit": "423b70558d8f5ab41488710746f351612dc6b0029436ffcac6ed17c96f72696c6966652d6665652d7661756c74",
-  "inboxAddress": "addr_test1wrkf4f90vhqyqkrmjqcterat8lcgfufuc2areae8n2c977cd78ur6",
-  "inboxHash": "ec9aa4af65c040587b9030bc8fab3ff084f13cc2ba3cf7279ab05f7b",
-  "inboxRewardAddress": "stake_test17rkf4f90vhqyqkrmjqcterat8lcgfufuc2areae8n2c977cdkey5s",
-  "openTx": "236ab22960da754f9bfeb805d8dd53d0e3e025e42d01f03d29932cd24da803dc",
-  "strayOpen": [
+    },
     {
       "carpPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
       "carpName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
@@ -72,15 +57,60 @@
       "inboxHash": "e68b0c436395abcb6a1b22ad3ef215d29bd2ee4c56da1f6c23e3a228",
       "inboxRewardAddress": "stake_test17rngkrzrvw26hjm2rv3260hjzhffh5hwf3td58mvy036y2q25cewz",
       "openTx": "e629ec175a4fddb8561a12f37bad6d100a1b45820db569dfb2a860ac02932a9a",
-      "note": "Instance THỪA, mở do lỗi kịch bản 2026-10-04: lần chạy 02 thứ nhất nộp tx rồi chết ở bước chờ xác nhận (provider Koios của lucid lỗi phân tích tx_info) trước khi ghi openTx; lần chạy lại thấy seed đã bị tiêu nên chọn seed mới và mở instance ở gốc tệp. Instance này CÒN MỞ: 5 tADA + NFT sổ ở địa chỉ kho, sổ 0/0; 2 tADA cọc đăng ký credential hộp thư không thu hồi được (mặt publish cấm huỷ đăng ký). KHÔNG dùng: phí phải vào hộp thư của instance ở gốc tệp. Đóng bằng 06 khi được duyệt (phải đưa bản ghi này về gốc tệp trước)."
-    }
-  ],
-  "previousInbox": [
+      "note": "Instance THỪA, mở do lỗi kịch bản 2026-10-04: lần chạy 02 thứ nhất nộp tx rồi chết ở bước chờ xác nhận (provider Koios của lucid lỗi phân tích tx_info) trước khi ghi openTx; lần chạy lại thấy seed đã bị tiêu nên chọn seed mới và mở instance kế tiếp. Không dùng: sổ 0/0 tới lúc đóng. Đóng 2026-11-06 bằng 06 dựng từ plutus.json 344d132 (cùng mã fee_vault với instance kế tiếp, hộp thư v1), thu 5 tADA; 2 tADA cọc đăng ký credential hộp thư không thu hồi được (mặt publish cấm huỷ đăng ký).",
+      "closeTx": "9aeabb6abdb8a3d79a4eaba80799a2e571ed8f36af7d4a93d8f04cd646d1b3d2",
+      "closedAt": "addr_test1qrqzj0xdt0gxr4vsxscwyef9nzwpe06sgx5cm4khut9xz58y0qah7hsadf9kfzn3yn5pq6raul02jnjn7x30a8gtyafqfzdt7v"
+    },
     {
-      "inboxAddress": "addr_test1wqg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdrdyzr",
-      "inboxHash": "11115e2eb62b7c4ada000da5d5c9a01d0cd4ec1d05e11abf7cbc20da",
-      "inboxRewardAddress": "stake_test17qg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdtnu4f"
+      "carpPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
+      "carpName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+      "carpUnit": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d37959d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+      "mintTx": "df6331d857c58cc3da18933bd89faf05ebc9dfdb612acee50d49a05fee379008",
+      "seed": {
+        "txHash": "e629ec175a4fddb8561a12f37bad6d100a1b45820db569dfb2a860ac02932a9a",
+        "outputIndex": 1
+      },
+      "escrowAddress": "addr_test1wzg903d252t8lyn2w36qng4umauscej6vpdwlh8ae83cl0gqp9vt7",
+      "escrowHash": "9057c5aaa2967f926a747409a2bcdf790c665a605aefdcfdc9e38fbd",
+      "vaultAddress": "addr_test1wpprkuz43k844dq53pcsw3hn29sjm34sq22rdl72cmk30jgjl9net",
+      "vaultHash": "423b70558d8f5ab41488710746f351612dc6b0029436ffcac6ed17c9",
+      "vaultNftUnit": "423b70558d8f5ab41488710746f351612dc6b0029436ffcac6ed17c96f72696c6966652d6665652d7661756c74",
+      "inboxAddress": "addr_test1wrkf4f90vhqyqkrmjqcterat8lcgfufuc2areae8n2c977cd78ur6",
+      "inboxHash": "ec9aa4af65c040587b9030bc8fab3ff084f13cc2ba3cf7279ab05f7b",
+      "inboxRewardAddress": "stake_test17rkf4f90vhqyqkrmjqcterat8lcgfufuc2areae8n2c977cdkey5s",
+      "openTx": "236ab22960da754f9bfeb805d8dd53d0e3e025e42d01f03d29932cd24da803dc",
+      "previousInbox": [
+        {
+          "inboxAddress": "addr_test1wqg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdrdyzr",
+          "inboxHash": "11115e2eb62b7c4ada000da5d5c9a01d0cd4ec1d05e11abf7cbc20da",
+          "inboxRewardAddress": "stake_test17qg3zh3wkc4hcjk6qqx6t4wf5qwse48vr5z7zx4l0j7zpksdtnu4f"
+        }
+      ],
+      "inboxRegisterTx": "c3f9b06fc547211b720865ca6e0d7734716e6bb6eb5e592b05376ff6c01ebd5a",
+      "skimTx": "5f6adb2e3218e438730e038dc6643ac0c0cd998fd5ad4e3d511ff80482fc4182",
+      "skimmed": "100000000",
+      "listedAt": 1793924864000,
+      "closeTx": "c2d8c4e27dafdf97a27791f87fad88b260a2d6aa063882d38ecdc5a5402ef4a6",
+      "closedAt": "addr_test1qrqzj0xdt0gxr4vsxscwyef9nzwpe06sgx5cm4khut9xz58y0qah7hsadf9kfzn3yn5pq6raul02jnjn7x30a8gtyafqfzdt7v"
     }
   ],
-  "inboxRegisterTx": "c3f9b06fc547211b720865ca6e0d7734716e6bb6eb5e592b05376ff6c01ebd5a"
+  "seed": {
+    "txHash": "5f6adb2e3218e438730e038dc6643ac0c0cd998fd5ad4e3d511ff80482fc4182",
+    "outputIndex": 2
+  },
+  "escrowAddress": "addr_test1wzg903d252t8lyn2w36qng4umauscej6vpdwlh8ae83cl0gqp9vt7",
+  "escrowHash": "9057c5aaa2967f926a747409a2bcdf790c665a605aefdcfdc9e38fbd",
+  "vaultAddress": "addr_test1wzw2wffksfujduv560ccvqha3uz9gsq0f8surqgl0p6d2uq3c4h8t",
+  "vaultHash": "9ca72536827926f194d3f18602fd8f0454400f49e1c1811f7874d570",
+  "vaultNftUnit": "9ca72536827926f194d3f18602fd8f0454400f49e1c1811f7874d5706f72696c6966652d6665652d7661756c74",
+  "inboxAddress": "addr_test1wrr5rdj0yuctv65e3a3tjzc32nkv59at3crcrtzlwrjefxc5y6xe5",
+  "inboxHash": "c741b64f2730b66a998f62b90b1154ecca17ab8e0781ac5f70e5949b",
+  "inboxRewardAddress": "stake_test17rr5rdj0yuctv65e3a3tjzc32nkv59at3crcrtzlwrjefxc5vy7w7",
+  "openTx": "8b027d802bfeb3beae4b6b44fa869744de120de365d103a7bfa8152b7792259a",
+  "payInboxTx": "ffb450d6ae91a17b0dd57b371a71213a5ced4d28a8b92560217d282210393b55",
+  "collectTx": "4d8945315b657a59762000c1947d2f7ee4af7ded7d594acbd7358715aa12d144",
+  "collected": "500000000",
+  "skimTx": "0ef5c0b46ee164d01c75b8b89698b7bb7da305e5f8f1f11b95bbda65fe972084",
+  "skimmed": "50000000",
+  "listedAt": 1793925219000
 }
