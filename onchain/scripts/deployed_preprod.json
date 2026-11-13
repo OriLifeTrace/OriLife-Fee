@@ -2,9 +2,9 @@
   "network": "Preprod",
   "wallet": "addr_test1qrqzj0xdt0gxr4vsxscwyef9nzwpe06sgx5cm4khut9xz58y0qah7hsadf9kfzn3yn5pq6raul02jnjn7x30a8gtyafqfzdt7v",
   "operatorKeyHash": "c0293ccd5bd061d5903430e26525989c1cbf5041a98dd6d7e2ca6150",
-  "carpPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
-  "carpName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
-  "carpUnit": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d37959d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+  "ringPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
+  "ringName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+  "ringUnit": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d37959d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
   "mintTx": "df6331d857c58cc3da18933bd89faf05ebc9dfdb612acee50d49a05fee379008",
   "previous": {
     "escrowAddress": "addr_test1wrxwf3kr6xez849d0dywk7ka28sgkgk8x5laq6zgkd6cpkgmek4sr",
@@ -22,9 +22,9 @@
   },
   "closed": [
     {
-      "carpPolicy": "a756fbd62481650504f8344b3f039e6803fd2cff37a1d3d7da923872",
-      "carpName": "tCARP",
-      "carpUnit": "a756fbd62481650504f8344b3f039e6803fd2cff37a1d3d7da9238727443415250",
+      "ringPolicy": "a756fbd62481650504f8344b3f039e6803fd2cff37a1d3d7da923872",
+      "ringName": "tCARP",
+      "ringUnit": "a756fbd62481650504f8344b3f039e6803fd2cff37a1d3d7da9238727443415250",
       "mintTx": "48b81b72b9ecdefa2b96ca8e2db690c219e5b46b059f4ee75351b99359c8f827",
       "escrowAddress": "addr_test1wprtlz6pvvpslhwdtkdj629zsed53ajwc0qphzfkgpnzc7ssd72q3",
       "escrowHash": "46bf8b4163030fddcd5d9b2d28a2865b48f64ec3c01b893640662c7a",
@@ -41,9 +41,9 @@
       "closedAt": "addr_test1qrqzj0xdt0gxr4vsxscwyef9nzwpe06sgx5cm4khut9xz58y0qah7hsadf9kfzn3yn5pq6raul02jnjn7x30a8gtyafqfzdt7v"
     },
     {
-      "carpPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
-      "carpName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
-      "carpUnit": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d37959d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+      "ringPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
+      "ringName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+      "ringUnit": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d37959d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
       "seed": {
         "txHash": "05fff2b49783b238aa8dc9b76a877fac73f65c4a06b875cf817ce3ec25a0f732",
         "outputIndex": 0
@@ -62,9 +62,9 @@
       "closedAt": "addr_test1qrqzj0xdt0gxr4vsxscwyef9nzwpe06sgx5cm4khut9xz58y0qah7hsadf9kfzn3yn5pq6raul02jnjn7x30a8gtyafqfzdt7v"
     },
     {
-      "carpPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
-      "carpName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
-      "carpUnit": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d37959d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+      "ringPolicy": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d379",
+      "ringName": "59d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
+      "ringUnit": "71968a8df882a4dd24688b7904473a5d5f7e35332cba063e6ad7d37959d0bc483cd12816c029130722b4288c41d7423475a54b512027fd24",
       "mintTx": "df6331d857c58cc3da18933bd89faf05ebc9dfdb612acee50d49a05fee379008",
       "seed": {
         "txHash": "e629ec175a4fddb8561a12f37bad6d100a1b45820db569dfb2a860ac02932a9a",

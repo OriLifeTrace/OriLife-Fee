@@ -61,12 +61,12 @@ the whole suite run again; every one turned it red:
 ## Onchain (`onchain/`) — carried over from the 2026-09-21 measurement
 
 1. `onchain/orilife_treasury/validators/fee_vault.ak` and `donation_escrow.ak`, merged in `2b35232`
-   on 2026-08-21, driven by `onchain/scripts/01_mint_test_carp.mjs` through `06_close_vault.mjs`.
+   on 2026-08-21, driven by `onchain/scripts/01_mint_test_ring.mjs` through `06_close_vault.mjs`.
 2. `onchain/scripts/deployed_preprod.json` records a lifecycle executed end to end on Preprod —
    mint, open, collect, skim, donate, close — each step with its transaction hash. Its `previous`
    block records an earlier validator revision with no `Close` branch, where every branch forced
    `lovelace_of(out) >= lovelace_of(in)`: 5,000,000 lovelace at `addr_test1wrxmzy4…` cannot be
-   withdrawn by any redeemer. The 900,000 tCARP at the same address are not stranded — `Operate`
+   withdrawn by any redeemer. The 900,000 tCARP (on-chain asset name of that test token) at the same address are not stranded — `Operate`
    still spends those. The current revision has `Close`.
 3. `onchain/scripts/*.mjs` import `@lucid-evolution/lucid` from this repository's root
    `package.json`; that is the only reason the dependency is still there.
@@ -86,13 +86,13 @@ the whole suite run again; every one turned it red:
    burnt by `Close`); any other UTxO at the vault address can only be swept into the ledger by
    `Collect`. New validator `fee_inbox` receives the platform fee as a plain output with no datum
    and lets anyone sweep it into the ledger (withdraw-zero, one batch check). `donation_escrow`
-   prices `Donate` by a linear descending auction from `start_lovelace_per_carp` to
-   `min_lovelace_per_carp` over `decay_ms`, opened at `listed_at`, which `Skim` pins to the upper
+   prices `Donate` by a linear descending auction from `start_lovelace_per_ring` to
+   `min_lovelace_per_ring` over `decay_ms`, opened at `listed_at`, which `Skim` pins to the upper
    validity bound. All three hashes change again; this revision has never been deployed.
    Hardening in the same revision: `Donate` runs with exactly one redeemer (the whole-transaction
    `treasury_donation` cannot be shared by two escrow instances), releases at least
-   `min(held, lot_min)`, and leaves at most one remainder with CARP > 0 and no less lovelace;
-   `Collect` requires the ledger to gain at least the CARP of every other script-locked input, which
+   `min(held, lot_min)`, and leaves at most one remainder with RING > 0 and no less lovelace;
+   `Collect` requires the ledger to gain at least the RING of every other script-locked input, which
    covers any number of inbox versions pointing at one vault.
 6. Checks, from `onchain/orilife_treasury` then the repository root:
    ```
@@ -108,9 +108,9 @@ the whole suite run again; every one turned it red:
 ## Onchain — foreign tokens in the ledger UTxO (2026-11-05)
 
 8. `shape_ok` in `fee_vault.ak` now requires the continuing ledger UTxO to carry exactly the
-   non-ADA, non-CARP value of the ledger input, the ledger NFT included (`fee_vault.ak` header,
+   non-ADA, non-RING value of the ledger input, the ledger NFT included (`fee_vault.ak` header,
    item 10). Before, it pinned only the address, the NFT and lovelace not decreasing, and
-   `Collect` and `Skim` need no signature, so anyone could strip any token other than CARP from
+   `Collect` and `Skim` need no signature, so anyone could strip any token other than RING from
    the ledger UTxO. The `fee_vault` hash changes; this revision has not been deployed. The
    scripts derive the vault address from `plutus.json`, so driving the deployed instance
    (collect, skim, close, rotate) means running them from `4cc29e7`. Checks:
@@ -119,7 +119,7 @@ the whole suite run again; every one turned it red:
    `onchain/README.md`, section "Chi phí thực thi đo trên Emulator".
 9. `Open` now requires the new ledger UTxO to hold nothing but lovelace and exactly one ledger
    NFT (`without_lovelace(opened.value) == from_asset(policy_id, vault_nft_name, 1)`). Item 8
-   only keeps the non-ADA, non-CARP value equal from input to output, so a token put in at
+   only keeps the non-ADA, non-RING value equal from input to output, so a token put in at
    opening would stay in the ledger UTxO for the life of the vault. Checks: replacing this
    condition with `True` turns exactly `open_rejects_a_foreign_token_in_the_opening_output` red
    (1 / 323); the Open row of the cost table was re-measured on 2026-11-06.
@@ -134,6 +134,6 @@ the whole suite run again; every one turned it red:
   failures — counts that went stale when tests were added (`54 / 54`, `57 / 57`), and a file count
   that had never been true (16 stated, 17 at every commit). Both are why the counts above carry
   their commands.
-- **2026-09-14**: this file said the CARP validator lived on an unmerged branch; it had been merged
+- **2026-09-14**: this file said the RING validator lived on an unmerged branch; it had been merged
   two commits later and the branch was deleted by 2026-09-21. For the current state, read the tree
   (`git ls-tree -r HEAD onchain/`), not a paragraph naming a branch.

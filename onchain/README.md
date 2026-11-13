@@ -1,10 +1,10 @@
 # Kho phí OriLife trên Cardano
 
-Phí dịch vụ chảy vào bằng CARP. Một phần cố định của dòng vào — bản thử đặt 10% — là **nghĩa
+Phí dịch vụ chảy vào bằng RING. Một phần cố định của dòng vào — bản thử đặt 10% — là **nghĩa
 vụ phải nộp lại kho bạc Cardano**, và nghĩa vụ đó do mã ép, không do quy trình vận hành.
 
 **Đọc kỹ câu này trước, vì tiêu đề dễ đọc quá tay.** Thứ được ép bằng mã là quan hệ giữa
-`skimmed` và `collected` trong sổ. `collected` chỉ đếm CARP **đi qua hộp thư phí hoặc rơi
+`skimmed` và `collected` trong sổ. `collected` chỉ đếm RING **đi qua hộp thư phí hoặc rơi
 vào địa chỉ kho**: hợp đồng không biết doanh thu thật của OriLife là bao nhiêu, và một khoản
 phí trả thẳng vào ví khác thì không bao giờ vào sổ. Ngoài ra giá trị thật vào kho bạc là
 `10% × giá đấu lúc nộp`, không phải 10% của doanh thu — giá đấu đi từ giá mở xuống sàn, cả
@@ -28,7 +28,7 @@ kho tạm giữ phần đã trích chỉ mở khoá trong một giao dịch có 
 ## Ba hợp đồng
 
 ```
-ConsumeMAGIC ──(CARP, datum hoàn hoặc không datum)──▶ fee_inbox ──gom (ai cũng gọi)──▶ fee_vault ──Skim──▶ donation_escrow ──Donate──▶ kho bạc Cardano
+ConsumeMAGIC ──(RING, datum hoàn hoặc không datum)──▶ fee_inbox ──gom (ai cũng gọi)──▶ fee_vault ──Skim──▶ donation_escrow ──Donate──▶ kho bạc Cardano
 ```
 
 ### `fee_vault` — kho phí
@@ -36,13 +36,13 @@ ConsumeMAGIC ──(CARP, datum hoàn hoặc không datum)──▶ fee_inbox �
 **Sổ được định danh bằng NFT, không bằng địa chỉ.** Ô sổ là UTxO DUY NHẤT ở địa chỉ kho giữ
 NFT `orilife-fee-vault`, chính sách đúc = chính băm `fee_vault`. NFT đúc một lần: hợp đồng nhận
 `seed` (một UTxO ví) làm tham số, và lệnh đúc `Open` đòi giao dịch tiêu đúng UTxO đó. `Open`
-còn ép ô sổ mở ra ở đúng địa chỉ kho, sổ `0/0`, không CARP, không reference script, và khoá
+còn ép ô sổ mở ra ở đúng địa chỉ kho, sổ `0/0`, không RING, không reference script, và khoá
 vận hành ghi trong sổ phải ký giao dịch mở. `Close` phải đốt NFT. Không có NFT thì một UTxO bất kỳ mang datum tự đặt ở địa chỉ kho trông y hệt sổ.
 
 Mọi UTxO khác ở địa chỉ kho là **ô lạc** (gửi nhầm, có hay không có datum). Ô lạc chỉ được
-tiêu cùng ô sổ trong một `Collect`, và sổ phải tăng ít nhất bằng số CARP của ô lạc. `Skim` và
-`Close` từ chối giao dịch có ô lạc; `Operate` nhận ô lạc chỉ-ADA (CARP ở ô sổ không đổi), không
-nhận ô lạc có CARP. Hệ quả cần biết: phần **không phải CARP** của ô
+tiêu cùng ô sổ trong một `Collect`, và sổ phải tăng ít nhất bằng số RING của ô lạc. `Skim` và
+`Close` từ chối giao dịch có ô lạc; `Operate` nhận ô lạc chỉ-ADA (RING ở ô sổ không đổi), không
+nhận ô lạc có RING. Hệ quả cần biết: phần **không phải RING** của ô
 lạc (ADA, token lạ, reference script) ai gom thì người đó lấy — nên đừng bao giờ đặt reference
 script ở địa chỉ kho hay hộp thư.
 
@@ -50,24 +50,24 @@ Sổ nằm trong datum, ai cũng đọc được thẳng từ UTxO:
 
 | Trường | Nghĩa |
 |---|---|
-| `collected` | tổng CARP đã từng chảy vào, cộng dồn — **không phải** số dư hiện tại |
-| `skimmed` | tổng CARP đã chuyển sang kho tạm, cộng dồn |
+| `collected` | tổng RING đã từng chảy vào, cộng dồn — **không phải** số dư hiện tại |
+| `skimmed` | tổng RING đã chuyển sang kho tạm, cộng dồn |
 | `operator_key` | băm khoá vận hành hiện tại. Nằm trong datum, không phải tham số biên dịch, để xoay khoá không đổi băm kho |
 
 | Lệnh | Ai gọi được | Luật |
 |---|---|---|
-| `Open` (đúc NFT sổ) | ai tiêu được UTxO hạt giống, kèm chữ ký của `operator_key` ghi trong datum | một lần duy nhất; đúng một ô ở địa chỉ kho; sổ trắng `collected = skimmed = 0`; ô sổ chỉ mang ADA và đúng một NFT sổ (không CARP, không token khác) |
-| `Collect { amount }` | bất kỳ ai | `collected` tăng ĐÚNG bằng lượng CARP thật sự vào ô sổ, và không ít hơn tổng CARP của MỌI đầu vào khoá bằng script khác trong giao dịch; phần token ngoài ADA và CARP của ô sổ giữ nguyên; `operator_key` giữ nguyên |
-| `Skim { amount }` | bất kỳ ai | phần trích đi đúng về kho tạm, đúng instance kho phí này, không vượt nghĩa vụ, và mở phiên đấu giá tại đúng cận trên khoảng hiệu lực; phần token ngoài ADA và CARP của ô sổ giữ nguyên; `operator_key` giữ nguyên |
-| `Operate` | chỉ khoá vận hành (trong datum đầu vào) | chỉ RÚT được, không nạp được; phần còn lại phải **phủ được nghĩa vụ còn nợ**; phần token ngoài ADA và CARP của ô sổ giữ nguyên; `operator_key` giữ nguyên |
-| `Rotate` | khoá vận hành hiện tại **và** khoá mới cùng ký | ô sổ ở lại đúng địa chỉ, giá trị y nguyên (ADA, NFT sổ, CARP), `collected`/`skimmed` y nguyên; chỉ `operator_key` đổi; không nhận ô lạc có CARP |
+| `Open` (đúc NFT sổ) | ai tiêu được UTxO hạt giống, kèm chữ ký của `operator_key` ghi trong datum | một lần duy nhất; đúng một ô ở địa chỉ kho; sổ trắng `collected = skimmed = 0`; ô sổ chỉ mang ADA và đúng một NFT sổ (không RING, không token khác) |
+| `Collect { amount }` | bất kỳ ai | `collected` tăng ĐÚNG bằng lượng RING thật sự vào ô sổ, và không ít hơn tổng RING của MỌI đầu vào khoá bằng script khác trong giao dịch; phần token ngoài ADA và RING của ô sổ giữ nguyên; `operator_key` giữ nguyên |
+| `Skim { amount }` | bất kỳ ai | phần trích đi đúng về kho tạm, đúng instance kho phí này, không vượt nghĩa vụ, và mở phiên đấu giá tại đúng cận trên khoảng hiệu lực; phần token ngoài ADA và RING của ô sổ giữ nguyên; `operator_key` giữ nguyên |
+| `Operate` | chỉ khoá vận hành (trong datum đầu vào) | chỉ RÚT được, không nạp được; phần còn lại phải **phủ được nghĩa vụ còn nợ**; phần token ngoài ADA và RING của ô sổ giữ nguyên; `operator_key` giữ nguyên |
+| `Rotate` | khoá vận hành hiện tại **và** khoá mới cùng ký | ô sổ ở lại đúng địa chỉ, giá trị y nguyên (ADA, NFT sổ, RING), `collected`/`skimmed` y nguyên; chỉ `operator_key` đổi; không nhận ô lạc có RING |
 | `Close` | chỉ khoá vận hành (trong datum đầu vào) | chỉ khi nghĩa vụ đã trả HẾT; đốt NFT sổ; không để lại ô kho nào |
 
 **Xoay khoá vận hành là `Rotate`, không phải `Close`.** `Close` là tắt VĨNH VIỄN: NFT sổ bị đốt,
 và `fee_inbox` chỉ gom được vào một sổ còn giữ NFT của đúng băm kho nó bake. Trước khi `Close`
-phải gom hết hộp thư — ô CARP nào còn ở hộp thư lúc đóng là mất đường vào sổ mãi mãi. Hợp đồng
+phải gom hết hộp thư — ô RING nào còn ở hộp thư lúc đóng là mất đường vào sổ mãi mãi. Hợp đồng
 không chặn được điều này: ô hộp thư không nằm trong giao dịch đóng kho, và một validator không
-thấy UTxO ngoài giao dịch của nó. `06_close_vault.mjs` chặn ở ngoài chuỗi: còn ô CARP gom được ở
+thấy UTxO ngoài giao dịch của nó. `06_close_vault.mjs` chặn ở ngoài chuỗi: còn ô RING gom được ở
 hộp thư hoặc địa chỉ kho thì dừng. Ai dựng giao dịch `Close` bằng tay thì không có hàng rào đó.
 
 Khoá mới phải ký `Rotate` vì một băm không ai cầm khoá ghi vào sổ là mất vĩnh viễn `Operate`,
@@ -78,20 +78,20 @@ thì vô nghĩa.
 
 Vế "mọi đầu vào khoá bằng script" của `Collect` là có chủ ý, không phải "mọi ô hộp thư": hộp thư
 biết băm kho, kho không biết băm hộp thư. Đổi mã hộp thư (hay dựng lại kho) là có hai phiên bản
-hộp thư cùng sống, và mỗi phiên bản chỉ cộng CARP của chính nó — một lượt gom hai bên mà sổ chỉ
+hộp thư cùng sống, và mỗi phiên bản chỉ cộng RING của chính nó — một lượt gom hai bên mà sổ chỉ
 tăng bằng phần một bên thì mỗi bên đều thấy mình đủ. Kho là bên sống lâu, nên phép so đặt ở kho
 và phủ mọi phiên bản hộp thư về sau.
 
 ### `fee_inbox` — hộp thư phí
 
 Giao dịch ConsumeMAGIC không thể kèm một `Collect`: nó chỉ tiêu ô của chính nó và vault MAGIC.
-Nên phí nền tảng bằng CARP rời giao dịch đó dưới dạng **một đầu ra không datum** tới địa chỉ
+Nên phí nền tảng bằng RING rời giao dịch đó dưới dạng **một đầu ra không datum** tới địa chỉ
 hộp thư — không đầu vào script, không chữ ký OriLife. Gom vào sổ là một giao dịch riêng, và
 **ai cũng gom được**: hộp thư không đòi chữ ký, chỉ đòi kho nhận đủ.
 
 Kiểm theo mẫu *withdraw-zero*: mặt `spend` của mỗi ô hộp thư chỉ kiểm giao dịch có rút từ
 stake credential của chính hộp thư; mặt `withdraw` chạy MỘT lần cho cả lô và kiểm: đúng một
-đầu vào và một đầu ra giữ NFT sổ, sổ tăng ít nhất bằng tổng CARP của mọi ô hộp thư và mọi ô
+đầu vào và một đầu ra giữ NFT sổ, sổ tăng ít nhất bằng tổng RING của mọi ô hộp thư và mọi ô
 lạc ở địa chỉ kho trong giao dịch. Phép kiểm sổ chỉ chạy một lần, nhưng mặt `spend` của mỗi ô
 vẫn dò danh sách đầu vào để tìm lần rút, nên tổng chi phí tăng nhanh hơn tuyến tính theo số ô
 (bảng đo ở mục "Chi phí thực thi đo trên Emulator": khoảng 3,9 K mem thêm cho mỗi vị trí). Trần
@@ -117,14 +117,14 @@ phép so hoàn tốn theo (số ô × số credential), và ai cũng gửi đư�
 
 ### `donation_escrow` — kho tạm
 
-Một lối ra duy nhất: giao dịch phải nộp kho bạc ít nhất `số CARP rời đi × giá đấu`.
+Một lối ra duy nhất: giao dịch phải nộp kho bạc ít nhất `số RING rời đi × giá đấu`.
 
 **Ai cũng gọi được, cố ý.** Bắt buộc chữ ký OriLife thì OriLife biến mất là lời hứa chết
 theo. Đổi lại phải có giá chặn, nếu không người ngoài đổi giá bèo rồi bỏ túi chênh lệch.
 
 **Giá là một phiên đấu giá giảm dần, không phải một sàn cố định.** Mỗi khoản trích mở một
-phiên tại `listed_at`; giá mỗi CARP đi thẳng từ `start_lovelace_per_carp` xuống
-`min_lovelace_per_carp` trong `decay_ms`, rồi đứng ở sàn. Giá tính tại **cận dưới** khoảng
+phiên tại `listed_at`; giá mỗi RING đi thẳng từ `start_lovelace_per_ring` xuống
+`min_lovelace_per_ring` trong `decay_ms`, rồi đứng ở sàn. Giá tính tại **cận dưới** khoảng
 hiệu lực của giao dịch `Donate` (bắt buộc hữu hạn), làm tròn lên một lần:
 
 ```
@@ -132,8 +132,8 @@ giá(t) = sàn + (giá mở − sàn) × max(0, decay − (t − listed_at)) / d
 phải nộp = ceil(released × giá(t) / 10⁹)
 ```
 
-Với sàn cố định, người gọi `Donate` có một quyền chọn miễn phí: luôn nộp đúng sàn dù CARP
-đáng giá hơn nhiều. Giá giảm dần lấy lại phần chênh đó cho kho bạc — ai muốn CARP sớm phải
+Với sàn cố định, người gọi `Donate` có một quyền chọn miễn phí: luôn nộp đúng sàn dù RING
+đáng giá hơn nhiều. Giá giảm dần lấy lại phần chênh đó cho kho bạc — ai muốn RING sớm phải
 trả gần giá mở.
 
 Ba luật chặn những cách lách giá, cùng nằm trong `spend`:
@@ -141,20 +141,20 @@ Ba luật chặn những cách lách giá, cùng nằm trong `spend`:
 - **Không script nào khác chạy trong giao dịch `Donate`** (giao dịch có đúng một redeemer).
   `treasury_donation` là một con số cho cả giao dịch, không ghi nguồn: hai instance kho tạm khác
   tham số (hay bất kỳ script nào cũng đòi `donated >= x`) mà cùng giao dịch thì cùng đọc một
-  khoản nộp, và kho bạc chỉ nhận mức lớn nhất thay vì tổng. Hệ quả: đổi CARP qua DEX bằng script
+  khoản nộp, và kho bạc chỉ nhận mức lớn nhất thay vì tổng. Hệ quả: đổi RING qua DEX bằng script
   phải là một giao dịch riêng.
 - **Lượng nhả tối thiểu `released >= min(held, lot_min)`.** Không có nó thì nối chuỗi `Donate` 1
   đơn vị giữ chặt ô kho tạm (mỗi lần đổi output reference), loại người mua khác cho tới khi giá về
   sàn.
-- **Tối đa một ô dư; ô dư có CARP > 0 và lovelace không ít hơn ô vào.** ADA giữ chỗ của ô kho tạm
-  chỉ ra khi nhả TRỌN lô — nếu không, một lần nhả 1 đơn vị là lấy được nó. Ô dư 0 CARP thì không
+- **Tối đa một ô dư; ô dư có RING > 0 và lovelace không ít hơn ô vào.** ADA giữ chỗ của ô kho tạm
+  chỉ ra khi nhả TRỌN lô — nếu không, một lần nhả 1 đơn vị là lấy được nó. Ô dư 0 RING thì không
   bao giờ tiêu lại được.
 
 Datum bốn trường, và không trường nào là trang trí:
 
 | Trường | Nghĩa | Chặn gì |
 |---|---|---|
-| `carp` | số CARP UTxO này giữ | khai lệch để lần sau rời kho rẻ hơn thực tế |
+| `ring` | số RING UTxO này giữ | khai lệch để lần sau rời kho rẻ hơn thực tế |
 | `vault` | băm kho phí đã trích ra khoản này | hai instance kho phí dùng chung MỘT khoản trích |
 | `parent` | `None` = khoản vừa trích · `Some(ref)` = phần dư của ô `ref` | khoản MỚI bị đếm nhầm thành "trả lại" |
 | `listed_at` | mốc mở phiên (POSIX ms) | mở phiên lùi về quá khứ để mua ngay ở sàn |
@@ -166,7 +166,7 @@ nguyên `listed_at`** — tách lô không khởi động lại phiên.
 
 ## `epoch_donation` — quỹ nộp kho bạc mỗi epoch một lần
 
-Đứng riêng, không nối vào tuyến CARP ở trên. Một UTxO quỹ giữ ADA; mỗi epoch, **bất kỳ ai** đẩy
+Đứng riêng, không nối vào tuyến RING ở trên. Một UTxO quỹ giữ ADA; mỗi epoch, **bất kỳ ai** đẩy
 được ít nhất `per_epoch` lovelace từ quỹ vào kho bạc Cardano qua `treasury_donation`, không cần
 chữ ký. Người góp quỹ biến mất thì lời hứa vẫn chạy, chỉ cần một người chịu trả phí giao dịch.
 
@@ -306,7 +306,7 @@ không chỉ viết bài kiểm rồi tin nó có tác dụng.
 |---|---|---|---|
 | 1 | Kho tạm đo nghĩa vụ bằng TỔNG output tại địa chỉ mình, nên khoản `Skim` mới vào trong cùng giao dịch bị đếm thành "trả lại" và nghĩa vụ bốc hơi | `parent` trong datum; mọi output ở địa chỉ kho tạm phải khai `parent` là ô đang tiêu | `donate_rejects_a_fresh_skim_in_the_same_transaction`, `partial_release_rejects_a_remainder_pointing_elsewhere` |
 | 2 | Hai instance kho phí khác tham số dùng chung MỘT khoản trích: mỗi cái chỉ đếm input cùng băm nên đều thấy mình là input duy nhất | `vault` trong datum, `escrow_receives` đòi `vault == own_hash` | `skim_output_must_name_this_vault` |
-| 3 | `Operate` là cửa NẠP không ghi sổ — bơm CARP vào kho mà `collected` đứng yên | `carp_after <= carp_before` | `operate_cannot_add_carp_without_recording_it` |
+| 3 | `Operate` là cửa NẠP không ghi sổ — bơm RING vào kho mà `collected` đứng yên | `ring_after <= ring_before` | `operate_cannot_add_ring_without_recording_it` |
 | 4 | Không đóng được kho, mà mọi nhánh ép `lovelace ra >= lovelace vào` ⟹ ADA giữ chỗ nằm lại vĩnh viễn | thêm `Close`, đòi nghĩa vụ đã trả hết | `close_requires_the_obligation_to_be_settled` |
 
 Lỗ 1 và 2 phải vá CÙNG LƯỢT, không phải trùng hợp: kho tạm không nhận `skim_bps` hay `seed`
@@ -332,12 +332,12 @@ chúng là đổi mã biên dịch, tức đổi địa chỉ hợp đồng — 
 | `skim_bps` | `fee_vault` | `SKIM_BPS` |
 | `listing_window_ms` | `fee_vault` | `LISTING_WINDOW_MS` |
 | `seed` | `fee_vault` | UTxO ví chọn lúc mở kho, ghi ở `deployed_preprod.json` |
-| `min_lovelace_per_carp` (sàn) | `donation_escrow` | `MIN_LOVELACE_PER_CARP` |
-| `start_lovelace_per_carp` (giá mở) | `donation_escrow` | `START_LOVELACE_PER_CARP` |
+| `min_lovelace_per_ring` (sàn) | `donation_escrow` | `MIN_LOVELACE_PER_RING` |
+| `start_lovelace_per_ring` (giá mở) | `donation_escrow` | `START_LOVELACE_PER_RING` |
 | `decay_ms` (độ dài phiên) | `donation_escrow` | `DECAY_MS` |
 | `lot_min` (lượng nhả tối thiểu) | `donation_escrow` | `LOT_MIN` |
 | `vault_hash` | `fee_inbox` | băm `fee_vault` của instance |
-| chính sách CARP (`carp_policy`, `carp_name`) | cả ba | instance hiện hành: CARP đời 6 (`carpPolicy`/`carpName` ở gốc `deployed_preprod.json`); instance cũ dùng `tCARP` thử |
+| chính sách RING (`ring_policy`, `ring_name`) | cả ba | instance hiện hành: RING đời 6 (policy và tên tài sản đời 6 giữ nguyên như đã đúc; `ringPolicy`/`ringName` ở gốc `deployed_preprod.json`); instance cũ dùng đồng thử tên trên chuỗi `tCARP` (đúc trước đợt đổi tên CARP → RING; giữ nguyên tên đã đúc) |
 
 Thứ tự dựng bắt buộc: `donation_escrow` → `fee_vault` (nhận băm kho tạm và `seed`) →
 `fee_inbox` (nhận băm kho phí). Ngược lại là vòng tròn. Giá trị Mainnet của bộ tham số đấu
@@ -352,10 +352,10 @@ trường, đặt ngay trước lệnh (tên biến: `connect()` trong `scripts/
 ```bash
 cd onchain/orilife_treasury && aiken check && aiken build
 cd ../.. && node onchain/scripts/lifecycle_emulator.mjs    # trọn vòng đời trên Emulator, không chạm mạng
-node onchain/scripts/01_mint_test_carp.mjs                # từ đây trở đi là Preprod thật
+node onchain/scripts/01_mint_test_ring.mjs                # từ đây trở đi là Preprod thật
 node onchain/scripts/02_open_vault.mjs     # chọn seed, đúc NFT sổ, đăng ký credential hộp thư
-# mở kho cho một đồng CARP có sẵn trên chuỗi thay vì tCARP (bỏ qua 01):
-ORILIFE_FEE_CARP_POLICY=<56 hex> ORILIFE_FEE_CARP_NAME=<tên tài sản hex> node onchain/scripts/02_open_vault.mjs
+# mở kho cho một đồng RING có sẵn trên chuỗi thay vì tRING (bỏ qua 01):
+ORILIFE_FEE_RING_POLICY=<56 hex> ORILIFE_FEE_RING_NAME=<tên tài sản hex> node onchain/scripts/02_open_vault.mjs
 node onchain/scripts/03_collect_fee.mjs    # nộp phí vào hộp thư, rồi gom hộp thư + ô lạc vào sổ
 node onchain/scripts/04_skim.mjs           # trích 10%, mở phiên đấu giá
 node onchain/scripts/05_swap_and_donate.mjs
@@ -378,8 +378,8 @@ Hai giới hạn của bản này:
 
 Trạng thái đã triển khai ghi vào `scripts/deployed_preprod.json`; kịch bản đọc lại tệp đó
 nên chạy lại không đúc thêm hay mở thêm kho. Tệp đó là **nhật ký**: `02` dời instance đã
-đóng vào mảng `closed` (kèm đồng CARP nó dùng) trước khi mở instance mới, và dừng nếu instance
-cũ chưa đóng. `carpName` trong tệp là tên tài sản dạng **hex**; `buildScripts` dừng nếu gặp
+đóng vào mảng `closed` (kèm đồng RING nó dùng) trước khi mở instance mới, và dừng nếu instance
+cũ chưa đóng. `ringName` trong tệp là tên tài sản dạng **hex**; `buildScripts` dừng nếu gặp
 dạng chữ. Mảng `strayOpen` giữ instance còn mở nhưng KHÔNG phải instance hiện hành (xem ghi chú
 trong từng bản ghi) — phí chỉ đi vào hộp thư của instance ở gốc tệp.
 
@@ -418,7 +418,7 @@ kho tạm  addr_test1wprtlz6pvvpslhwdtkdj629zsed53ajwc0qphzfkgpnzc7ssd72q3
 > không chép lại đây.
 >
 > Bản thêm NFT sổ, hộp thư phí và đấu giá giảm dần đổi cả ba băm thêm một lần nữa (tham số
-> mới: `seed`, `listing_window_ms`, `start_lovelace_per_carp`, `decay_ms`; hợp đồng mới
+> mới: `seed`, `listing_window_ms`, `start_lovelace_per_ring`, `decay_ms`; hợp đồng mới
 > `fee_inbox`). Băm đổi ⟹ địa chỉ đổi, nên bản hiện tại CHƯA từng được deploy và chưa có địa
 > chỉ nào để ghi. Giữ nguyên địa chỉ cũ ở đây là cố ý: sửa chúng thành địa chỉ suy từ mã hôm nay là
 > trỏ người đọc tới một chỗ trên chuỗi không có gì, và xoá mất con đường về số dư mà
@@ -448,7 +448,7 @@ nằm lại đó làm bằng chứng thay vì làm lời kể.
 
 Đo bằng `lifecycle_emulator.mjs` (phase-two trên giao dịch thật sắp nộp, không phải ước
 lượng); số chạy lại được bất cứ lúc nào, bảng dưới là một lần chạy ngày 2026-11-05 (bản có
-chốt giữ nguyên token ngoài ADA và CARP trong ô sổ). Riêng dòng đúc NFT `Open` đo lại ngày
+chốt giữ nguyên token ngoài ADA và RING trong ô sổ). Riêng dòng đúc NFT `Open` đo lại ngày
 2026-11-06, sau khi `Open` đòi ô sổ mới mở chỉ mang ADA và đúng một NFT sổ. Trần mỗi giao dịch
 của Preprod là 14 M bộ nhớ / 10 G bước.
 
@@ -465,7 +465,7 @@ của Preprod là 14 M bộ nhớ / 10 G bước.
 | đóng kho | ô sổ `Close` + đốt NFT | 189 526 + 33 494 | 60 599 434 + 10 235 544 |
 
 Mỗi ô hộp thư tự nó rẻ (34 K → 147 K bộ nhớ, tăng dần theo vị trí trong giao dịch); phần nặng là
-ô sổ và mỗi ô lạc, vì cả hai cộng CARP trên mọi đầu vào. Vì vậy `03` đặt trần riêng cho ô lạc (4)
+ô sổ và mỗi ô lạc, vì cả hai cộng RING trên mọi đầu vào. Vì vậy `03` đặt trần riêng cho ô lạc (4)
 thấp hơn trần ô hộp thư (30).
 
 Bộ chạy đã được kiểm ngược bằng đột biến, mỗi đột biến cắm một dấu riêng, đếm dấu trước và sau:
@@ -477,24 +477,24 @@ Bộ chạy đã được kiểm ngược bằng đột biến, mỗi đột bi�
 
 ## Ghi chú trung thực
 
-- **`tCARP` là đồng THỬ, không phải CARP thật.** CARP thật chưa phát hành. Chính sách đúc ở
-  đây là một chữ ký đơn. Tên `tCARP` nói thẳng điều đó thay vì để người đọc tự nhầm.
+- **`tRING` là đồng THỬ, không phải RING thật.** RING thật chưa phát hành. Chính sách đúc ở
+  đây là một chữ ký đơn. Tên `tRING` nói thẳng điều đó thay vì để người đọc tự nhầm.
 - **"Sàn giao dịch" trong bản thử là một địa chỉ ví đóng vai bên mua.** Hợp đồng không quan
-  tâm CARP đi đâu — nó chỉ ràng buộc kho bạc phải nhận đủ. Ranh giới đó là cố ý: buộc một
+  tâm RING đi đâu — nó chỉ ràng buộc kho bạc phải nhận đủ. Ranh giới đó là cố ý: buộc một
   sàn cụ thể vào mã là buộc luôn rủi ro của sàn đó vào mã.
 - **Giá mở và sàn là con số quản trị, không phải giá thị trường.** Chưa nối máng giá. Hệ quả
-  phải nói ra: giá thị trường rơi xuống DƯỚI sàn thì `Donate` lỗ, không ai chạy, và CARP
+  phải nói ra: giá thị trường rơi xuống DƯỚI sàn thì `Donate` lỗ, không ai chạy, và RING
   trong kho tạm nằm lại cho tới khi có người chịu nộp đủ sàn. Đó là fail-closed nghiêng về
   kho bạc — cố ý, nhưng nó là đóng băng, và người đọc phải biết trước. Đấu giá giảm dần chỉ
   thu lại phần chênh khi giá thị trường nằm GIỮA sàn và giá mở.
 - **Gom có trần mỗi lượt, và chỉ nhặt ô gom được.** Hộp thư và địa chỉ kho là địa chỉ ai cũng gửi
-  vào được, nên `03` không nhặt mù: chỉ ô CÓ CARP, không mang băm datum chưa giải được, không mang
-  reference script; xếp CARP giảm dần; tối đa 30 ô hộp thư và 4 ô lạc. `03` bỏ qua ô chỉ-ADA và
+  vào được, nên `03` không nhặt mù: chỉ ô CÓ RING, không mang băm datum chưa giải được, không mang
+  reference script; xếp RING giảm dần; tối đa 30 ô hộp thư và 4 ô lạc. `03` bỏ qua ô chỉ-ADA và
   ô mang datum độc. Ô chỉ-ADA vẫn gom được nếu dựng tay kèm một `Collect` có `amount > 0`; ô mang
   băm datum không có tiền ảnh thì không ai tiêu được. Không hại gì, và `06` không để chúng chặn
   việc đóng kho.
 - **Nguồn tự động của `collected` mới có một nửa.** Hộp thư nhận phí từ bất kỳ giao dịch nào
-  trả CARP vào địa chỉ của nó, và ai cũng gom được. Phía ConsumeMAGIC chưa trả phí nền tảng
+  trả RING vào địa chỉ của nó, và ai cũng gom được. Phía ConsumeMAGIC chưa trả phí nền tảng
   vào địa chỉ hộp thư; tới lúc đó `03` vẫn tự nộp thay để thử tuyến.
 - **Credential hộp thư phải được đăng ký trước lượt gom đầu tiên.** `02` làm việc đó (cọc theo
   tham số mạng). Hành vi của mặt `publish` trên chuỗi thật chưa được thử — chỉ mới qua

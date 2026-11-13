@@ -38,14 +38,14 @@
 //// LỖ THỨ HAI, VÁ CÙNG ĐỢT: phần dư chỉ bị soi theo `payment_credential`, nên phần uỷ
 //// quyền của địa chỉ là một trường tự do. Cùng băm script mà khác phần uỷ quyền là HAI
 //// địa chỉ trên chuỗi. `Donate` cố ý KHÔNG đòi chữ ký ai, nên bất kỳ ai cũng tiêu ô kho
-//// tạm, nộp sàn cho một mẩu CARP rồi trả phần dư về một địa chỉ dời nhà: tiền vẫn nằm
+//// tạm, nộp sàn cho một mẩu RING rồi trả phần dư về một địa chỉ dời nhà: tiền vẫn nằm
 //// trong script, nhưng `utxosAt(escrowAddress)` của `05_swap_and_donate.mjs` không thấy
 //// nó nữa, và phần thưởng uỷ quyền trên ADA giữ chỗ chảy về khoá của kẻ đó. Nay mỗi
 //// phần dư phải đậu ĐÚNG địa chỉ của ô đang tiêu.
 //// ─────────────────────────────────────────────────────────────────────────────
 ////
 //// ĐẤU GIÁ GIẢM DẦN (bản dựng lại instance). Trả đúng sàn ở mọi thời điểm là trao cho người
-//// gọi `Donate` một quyền chọn miễn phí: lấy CARP theo sàn, bỏ túi chênh lệch tới giá thị
+//// gọi `Donate` một quyền chọn miễn phí: lấy RING theo sàn, bỏ túi chênh lệch tới giá thị
 //// trường, kho bạc chỉ nhận sàn. Nay giá mở ở TRẦN tại `listed_at` (kho phí ép mốc này
 //// bằng cận trên khoảng hiệu lực của `Skim`) rồi hạ tuyến tính về sàn trong `decay_ms`.
 //// Người gọi mua ở thời điểm nào thì trả giá của thời điểm đó — cạnh tranh giữa những
@@ -65,36 +65,36 @@ use cardano/transaction.{
   Transaction,
 }
 use orilife/fixtures.{
-  carp_name, carp_policy, escrow_datum, escrow_hash, inline, input_from, now_ms,
+  ring_name, ring_policy, escrow_datum, escrow_hash, inline, input_from, now_ms,
   operator_key, ref_at, rehomed_script_output, script_output, stranger_key, tx,
-  value_with_carp, vault_hash, wallet_output,
+  value_with_ring, vault_hash, wallet_output,
 }
 use orilife/math.{ceil_div}
 use orilife/types.{Donate, EscrowDatum, EscrowRedeemer}
 
-/// Một CARP = 10⁹ đơn vị nhỏ nhất (`nanothread`). Tỉ giá khai theo "lovelace cho mỗi 10⁹
-/// đơn vị", tức lovelace cho mỗi 1 CARP nguyên.
-const carp_scale: Int = 1_000_000_000
+/// Một RING = 10⁹ đơn vị nhỏ nhất (`nanoring`). Tỉ giá khai theo "lovelace cho mỗi 10⁹
+/// đơn vị", tức lovelace cho mỗi 1 RING nguyên.
+const ring_scale: Int = 1_000_000_000
 
 validator donation_escrow(
-  carp_policy: PolicyId,
-  carp_name: AssetName,
-  /// Sàn tỉ giá: giá cuối phiên đấu giá. Mỗi 1 CARP rời kho tạm phải kéo theo ít nhất ngần
+  ring_policy: PolicyId,
+  ring_name: AssetName,
+  /// Sàn tỉ giá: giá cuối phiên đấu giá. Mỗi 1 RING rời kho tạm phải kéo theo ít nhất ngần
   /// này lovelace nộp kho bạc, ở BẤT KỲ thời điểm nào. Con số quản trị, không phải giá thị
   /// trường — nó chỉ chặn đáy.
   ///
   /// Đánh đổi phải nói thẳng: sàn là hằng số biên dịch, không có máng giá. Giá thị
-  /// trường rơi xuống dưới sàn thì `Donate` lỗ, không ai chạy, và CARP trong kho tạm
+  /// trường rơi xuống dưới sàn thì `Donate` lỗ, không ai chạy, và RING trong kho tạm
   /// nằm lại cho tới khi có người chịu nộp đủ sàn. Đó là fail-closed NGHIÊNG VỀ kho bạc
   /// — cố ý, nhưng nó là đóng băng chứ không phải mất, và người đọc phải biết trước.
-  min_lovelace_per_carp: Int,
+  min_lovelace_per_ring: Int,
   /// Trần tỉ giá: giá mở phiên tại `listed_at` và mọi thời điểm trước đó. Không nhỏ hơn sàn.
-  start_lovelace_per_carp: Int,
+  start_lovelace_per_ring: Int,
   /// Thời gian (ms) giá hạ tuyến tính từ trần về sàn, tính từ `listed_at`.
   decay_ms: Int,
-  /// Lượng CARP tối thiểu (đơn vị nhỏ nhất) một lần `Donate` phải nhả, trừ khi ô giữ ít
+  /// Lượng RING tối thiểu (đơn vị nhỏ nhất) một lần `Donate` phải nhả, trừ khi ô giữ ít
   /// hơn ngần này — khi đó phải nhả TRỌN ô. Không có câu này thì ai cũng nộp vài lovelace
-  /// cho 1 đơn vị CARP, tiêu ô kho tạm liên tục và giữ chỗ nó trước người mua thật.
+  /// cho 1 đơn vị RING, tiêu ô kho tạm liên tục và giữ chỗ nó trước người mua thật.
   /// Đặt CUỐI để thứ tự các tham số cũ không đổi.
   lot_min: Int,
 ) {
@@ -105,7 +105,7 @@ validator donation_escrow(
     tx: Transaction,
   ) {
     expect Some(EscrowDatum {
-      carp: declared,
+      ring: declared,
       vault: own_vault,
       parent: _,
       listed_at,
@@ -114,7 +114,7 @@ validator donation_escrow(
     expect Script(own_hash) = own_input.output.address.payment_credential
 
     // Chỉ cho tiêu MỘT UTxO kho tạm mỗi giao dịch. Không có câu này thì hai UTxO cùng
-    // trỏ vào một khoản nộp kho bạc và một nửa số CARP rời kho không kèm đồng nào.
+    // trỏ vào một khoản nộp kho bạc và một nửa số RING rời kho không kèm đồng nào.
     let own_inputs =
       list.filter(
         tx.inputs,
@@ -124,7 +124,7 @@ validator donation_escrow(
       )
 
     // Giá trị thật đang nằm ở đây. Không tin `declared`, chỉ dùng nó để bắt lời khai lệch.
-    let held = quantity_of(own_input.output.value, carp_policy, carp_name)
+    let held = quantity_of(own_input.output.value, ring_policy, ring_name)
 
     // MỌI output chạy script này — lọc theo BĂM, không theo địa chỉ đầy đủ, cố ý rộng
     // để không đầu ra nào lọt khỏi tầm soát bằng cách đổi phần uỷ quyền. Rồi bắt từng
@@ -136,9 +136,9 @@ validator donation_escrow(
         tx.outputs,
         fn(output) { output.address.payment_credential == Script(own_hash) },
       )
-    // `continuing_honest` đòi tối đa MỘT đầu ra ở đây, nên `returned` là CARP của ô dư
-    // (0 khi không có ô dư) và `released = held − CARP(ô dư)`.
-    let returned = sum_carp(at_self, carp_policy, carp_name)
+    // `continuing_honest` đòi tối đa MỘT đầu ra ở đây, nên `returned` là RING của ô dư
+    // (0 khi không có ô dư) và `released = held − RING(ô dư)`.
+    let returned = sum_ring(at_self, ring_policy, ring_name)
     let released = held - returned
 
     // Thời điểm định giá: cận DƯỚI khoảng hiệu lực. Để ngỏ thì không có thời điểm nào.
@@ -158,19 +158,19 @@ validator donation_escrow(
       } else {
         decay_ms - elapsed
       }
-    // giá/CARP = sàn + (trần − sàn) × remaining / decay_ms. Nhân hết rồi chia MỘT lần, làm
+    // giá/RING = sàn + (trần − sàn) × remaining / decay_ms. Nhân hết rồi chia MỘT lần, làm
     // tròn LÊN về phía kho bạc — chia hai lần là làm tròn hai lần.
-    let floor_part = min_lovelace_per_carp * decay_ms
+    let floor_part = min_lovelace_per_ring * decay_ms
     let premium_part =
-      ( start_lovelace_per_carp - min_lovelace_per_carp ) * remaining
+      ( start_lovelace_per_ring - min_lovelace_per_ring ) * remaining
     let required =
-      ceil_div(released * ( floor_part + premium_part ), carp_scale * decay_ms)
+      ceil_div(released * ( floor_part + premium_part ), ring_scale * decay_ms)
 
     and {
       // Đúng MỘT redeemer trong cả giao dịch — tức không script Plutus nào khác chạy cạnh
       // `Donate`. `treasury_donation` là trường TOÀN giao dịch: hai kho tạm khác tham số
       // (khác băm, nên câu `own_inputs` bên dưới không thấy nhau) hay bất kỳ script nào
-      // khác cũng đòi `donated >= x` sẽ cùng đếm MỘT khoản nộp. Hệ quả: đổi CARP qua DEX
+      // khác cũng đòi `donated >= x` sẽ cùng đếm MỘT khoản nộp. Hệ quả: đổi RING qua DEX
       // bằng script phải là giao dịch riêng.
       list.length(tx.redeemers) == 1,
       list.length(own_inputs) == 1,
@@ -179,8 +179,8 @@ validator donation_escrow(
       // Lô tối thiểu: nhả ít nhất `lot_min`, hoặc trọn ô nếu ô giữ ít hơn ngần đó.
       lot_min > 0,
       released >= min_int(held, lot_min),
-      min_lovelace_per_carp > 0,
-      start_lovelace_per_carp >= min_lovelace_per_carp,
+      min_lovelace_per_ring > 0,
+      start_lovelace_per_ring >= min_lovelace_per_ring,
       decay_ms > 0,
       donation_at_least(tx, required),
       continuing_honest(
@@ -190,8 +190,8 @@ validator donation_escrow(
         lovelace_of(own_input.output.value),
         own_vault,
         listed_at,
-        carp_policy,
-        carp_name,
+        ring_policy,
+        ring_name,
       ),
     }
   }
@@ -213,7 +213,7 @@ fn min_int(a: Int, b: Int) -> Int {
   }
 }
 
-fn sum_carp(outputs: List<Output>, policy: PolicyId, name: AssetName) -> Int {
+fn sum_ring(outputs: List<Output>, policy: PolicyId, name: AssetName) -> Int {
   list.foldl(
     outputs,
     0,
@@ -227,13 +227,13 @@ fn sum_carp(outputs: List<Output>, policy: PolicyId, name: AssetName) -> Int {
 ///      này mới là câu ghim nơi đến. Thiếu nó thì phần dư dời sang một địa chỉ khác cùng
 ///      băm: tiền không mất, nhưng `utxosAt(escrowAddress)` mất dấu và phần thưởng uỷ
 ///      quyền trên ADA giữ chỗ chảy về khoá của kẻ dựng giao dịch;
-///   2. khai đúng số CARP nó giữ — bỏ câu này thì một lần nộp có thể để lại một UTxO
-///      khai 0 trong khi giữ đầy CARP, và lần sau nó rời kho không tốn gì;
+///   2. khai đúng số RING nó giữ — bỏ câu này thì một lần nộp có thể để lại một UTxO
+///      khai 0 trong khi giữ đầy RING, và lần sau nó rời kho không tốn gì;
 ///   3. giữ nguyên băm kho phí đã trích ra khoản gốc — không cho đổi chủ giữa đường;
 ///   4. khai `parent` đúng bằng ô đang tiêu — đây là câu tách phần DƯ khỏi khoản MỚI;
 ///   5. giữ nguyên `listed_at` của ô đang tiêu — phiên đấu giá tiếp tục. Đặt lùi là hạ
 ///      giá cho lần mua sau; đặt tới là kéo giá về trần để đóng băng phần dư;
-///   6. mang CARP > 0 — ô dư 0 CARP không bao giờ tiêu lại được (`released > 0` hỏng),
+///   6. mang RING > 0 — ô dư 0 RING không bao giờ tiêu lại được (`released > 0` hỏng),
 ///      nên số ADA trong nó khoá vĩnh viễn;
 ///   7. giữ ít nhất số lovelace của ô đang tiêu — không ai rút được ADA giữ chỗ (gồm cả
 ///      phần thưởng của người đã trích) ra khỏi kho tạm bằng một lần `Donate`.
@@ -255,12 +255,12 @@ fn continuing_honest(
       fn(output) {
         when output.datum is {
           InlineDatum(raw) -> {
-            expect EscrowDatum { carp, vault, parent, listed_at }: EscrowDatum =
+            expect EscrowDatum { ring, vault, parent, listed_at }: EscrowDatum =
               raw
             and {
               output.address == own_address,
-              carp == quantity_of(output.value, policy, name),
-              carp > 0,
+              ring == quantity_of(output.value, policy, name),
+              ring > 0,
               lovelace_of(output.value) >= own_lovelace,
               vault == own_vault,
               parent == Some(own_ref),
@@ -285,21 +285,21 @@ fn donation_at_least(tx: Transaction, required: Int) -> Bool {
 // Bài kiểm.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Sàn dùng trong bài kiểm: mỗi 1 CARP kéo theo tối thiểu 500 lovelace.
+/// Sàn dùng trong bài kiểm: mỗi 1 RING kéo theo tối thiểu 500 lovelace.
 ///
 /// KHÔNG phải tham số deploy. Tham số thật ở `scripts/common.mjs` là
-/// `MIN_LOVELACE_PER_CARP = 10_000`, gấp 20 lần con số này. Ghi ra vì bản audit đầu đã
+/// `MIN_LOVELACE_PER_RING = 10_000`, gấp 20 lần con số này. Ghi ra vì bản audit đầu đã
 /// lấy nhầm hằng số của bài kiểm làm giá thật và báo thiệt hại nhỏ đi 20 lần.
 const test_rate: Int = 500
 
-/// Một CARP nguyên, tính bằng đơn vị nhỏ nhất.
-const carp_one: Int = 1_000_000_000
+/// Một RING nguyên, tính bằng đơn vị nhỏ nhất.
+const ring_one: Int = 1_000_000_000
 
-/// 1000 CARP nguyên. Bài kiểm đầu tiên viết bằng số trần (1_000) đã sai đơn vị và
-/// bài kiểm bắt được: 1_000 đơn vị nhỏ nhất là một PHẦN TRIỆU của một CARP, nên sàn
+/// 1000 RING nguyên. Bài kiểm đầu tiên viết bằng số trần (1_000) đã sai đơn vị và
+/// bài kiểm bắt được: 1_000 đơn vị nhỏ nhất là một PHẦN TRIỆU của một RING, nên sàn
 /// tỉ giá làm tròn về gần 0 và mọi phép so sàn đều qua. Giữ lại ghi chú này vì đó
 /// đúng là loại lỗi mà một bài kiểm "chạy là xanh" sẽ nuốt mất.
-const thousand_carp: Int = 1_000 * carp_one
+const thousand_ring: Int = 1_000 * ring_one
 
 /// Trần dùng trong bài kiểm: gấp 10 lần sàn, cùng tỉ lệ với giá trị thử Preprod.
 const test_start: Int = 5_000
@@ -332,7 +332,7 @@ fn run_with(
   run_full(floor, start, decay, test_lot_min, d, ref_at(0), tx_body)
 }
 
-/// Lô tối thiểu trong bài kiểm — bằng giá trị thử Preprod: 10 CARP nguyên.
+/// Lô tối thiểu trong bài kiểm — bằng giá trị thử Preprod: 10 RING nguyên.
 const test_lot_min: Int = 10_000_000_000
 
 /// Redeemer `Donate` của chính ô `own_ref` — giao dịch `Donate` thật luôn mang đúng nó.
@@ -359,8 +359,8 @@ fn run_full(
       _ -> tx_body
     }
   donation_escrow.spend(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     floor,
     start,
     decay,
@@ -373,37 +373,37 @@ fn run_full(
 }
 
 /// UTxO kho tạm đang nằm sẵn trên chuỗi (khoản vừa trích: `parent = None`).
-fn escrow_utxo(lovelace: Int, carp: Int) -> Output {
+fn escrow_utxo(lovelace: Int, ring: Int) -> Output {
   script_output(
     escrow_hash,
-    value_with_carp(lovelace, carp),
-    inline(escrow_datum(carp, None, settled_listing)),
+    value_with_ring(lovelace, ring),
+    inline(escrow_datum(ring, None, settled_listing)),
   )
 }
 
 /// Phần DƯ trả lại kho tạm, khai đúng ô nó sinh ra từ.
-fn remainder_utxo(lovelace: Int, carp: Int) -> Output {
+fn remainder_utxo(lovelace: Int, ring: Int) -> Output {
   script_output(
     escrow_hash,
-    value_with_carp(lovelace, carp),
-    inline(escrow_datum(carp, Some(ref_at(0)), settled_listing)),
+    value_with_ring(lovelace, ring),
+    inline(escrow_datum(ring, Some(ref_at(0)), settled_listing)),
   )
 }
 
-fn to_operator(carp: Int) -> Output {
+fn to_operator(ring: Int) -> Output {
   wallet_output(
     from_verification_key(operator_key),
-    value_with_carp(2_000_000, carp),
+    value_with_ring(2_000_000, ring),
   )
 }
 
-/// 1000 CARP × 500 = 500_000 lovelace phải vào kho bạc. Nộp đúng ngần đó thì qua.
+/// 1000 RING × 500 = 500_000 lovelace phải vào kho bạc. Nộp đúng ngần đó thì qua.
 test donate_passes_when_the_treasury_gets_the_floor() {
   run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [to_operator(thousand_carp)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [to_operator(thousand_ring)],
       [],
       Some(500_000),
     ),
@@ -414,10 +414,10 @@ test donate_passes_when_the_treasury_gets_the_floor() {
 /// kho bạc hưởng phần tốt hơn.
 test donate_passes_when_the_treasury_gets_more() {
   run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [to_operator(thousand_carp)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [to_operator(thousand_ring)],
       [],
       Some(900_000),
     ),
@@ -428,10 +428,10 @@ test donate_passes_when_the_treasury_gets_more() {
 /// một bài kiểm: lời hứa không phải quy trình, nó là điều kiện chi tiêu.
 test donate_fails_without_a_donation() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [to_operator(thousand_carp)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [to_operator(thousand_ring)],
       [],
       None,
     ),
@@ -441,10 +441,10 @@ test donate_fails_without_a_donation() {
 /// Thiếu một lovelace so với sàn cũng hỏng.
 test donate_fails_one_lovelace_below_the_floor() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [to_operator(thousand_carp)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [to_operator(thousand_ring)],
       [],
       Some(499_999),
     ),
@@ -454,10 +454,10 @@ test donate_fails_one_lovelace_below_the_floor() {
 /// Nộp làm nhiều đợt: 400 rời kho tạm, 600 quay lại. Chỉ phải nộp cho 400.
 test donate_allows_a_partial_release() {
   run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [remainder_utxo(2_000_000, 600 * carp_one), to_operator(400 * carp_one)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [remainder_utxo(2_000_000, 600 * ring_one), to_operator(400 * ring_one)],
       [],
       Some(200_000),
     ),
@@ -468,16 +468,16 @@ test donate_allows_a_partial_release() {
 /// đó rời kho không tốn một đồng nào — đường rút ruột gọn nhất, nên có bài kiểm riêng.
 test partial_release_rejects_a_lying_remainder() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       [
         script_output(
           escrow_hash,
-          value_with_carp(2_000_000, 600 * carp_one),
+          value_with_ring(2_000_000, 600 * ring_one),
           inline(escrow_datum(0, Some(ref_at(0)), settled_listing)),
         ),
-        to_operator(400 * carp_one),
+        to_operator(400 * ring_one),
       ],
       [],
       Some(200_000),
@@ -487,19 +487,19 @@ test partial_release_rejects_a_lying_remainder() {
 
 /// ĐÂY LÀ BÀI KIỂM CỦA LỖ ĐÃ VÁ.
 ///
-/// Dựng đúng giao dịch của kẻ tấn công: `Skim` 100 CARP mới đổ vào kho tạm, đồng thời
-/// `Donate` tiêu ô cũ 1000 CARP và đưa hết 1000 về ví. Bản trước tính
+/// Dựng đúng giao dịch của kẻ tấn công: `Skim` 100 RING mới đổ vào kho tạm, đồng thời
+/// `Donate` tiêu ô cũ 1000 RING và đưa hết 1000 về ví. Bản trước tính
 /// `released = 1000 − 100 = 900`, tức đòi nộp cho 900 trong khi 1000 rời kho. Bản này
 /// hỏng ngay vì khoản mới khai `parent = None`, không phải phần dư của ô đang tiêu.
 test donate_rejects_a_fresh_skim_in_the_same_transaction() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       [
         // Khoản `Skim` mới — đúng hình dạng mà `escrow_receives` bên kho phí ép ra.
-        escrow_utxo(2_000_000, 100 * carp_one),
-        to_operator(thousand_carp),
+        escrow_utxo(2_000_000, 100 * ring_one),
+        to_operator(thousand_ring),
       ],
       [],
       // Đủ sàn cho 900, thiếu sàn cho 1000. Bản trước cho qua đúng ở đây.
@@ -512,16 +512,16 @@ test donate_rejects_a_fresh_skim_in_the_same_transaction() {
 /// chỉ cần bịa một `OutputReference` bất kỳ là lại đếm được khoản mới thành phần dư.
 test partial_release_rejects_a_remainder_pointing_elsewhere() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       [
         script_output(
           escrow_hash,
-          value_with_carp(2_000_000, 600 * carp_one),
-          inline(escrow_datum(600 * carp_one, Some(ref_at(7)), settled_listing)),
+          value_with_ring(2_000_000, 600 * ring_one),
+          inline(escrow_datum(600 * ring_one, Some(ref_at(7)), settled_listing)),
         ),
-        to_operator(400 * carp_one),
+        to_operator(400 * ring_one),
       ],
       [],
       Some(200_000),
@@ -532,23 +532,23 @@ test partial_release_rejects_a_remainder_pointing_elsewhere() {
 /// Phần dư không được đổi băm kho phí giữa đường.
 test partial_release_rejects_a_remainder_that_switches_vault() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       [
         script_output(
           escrow_hash,
-          value_with_carp(2_000_000, 600 * carp_one),
+          value_with_ring(2_000_000, 600 * ring_one),
           inline(
             EscrowDatum {
-              carp: 600 * carp_one,
+              ring: 600 * ring_one,
               vault: escrow_hash,
               parent: Some(ref_at(0)),
               listed_at: settled_listing,
             },
           ),
         ),
-        to_operator(400 * carp_one),
+        to_operator(400 * ring_one),
       ],
       [],
       Some(200_000),
@@ -556,7 +556,7 @@ test partial_release_rejects_a_remainder_that_switches_vault() {
   )
 }
 
-/// Làm tròn nghiêng về kho bạc. 3 CARP × 500 / 1000 = 1,5 lovelace ⟹ phải nộp 2,
+/// Làm tròn nghiêng về kho bạc. 3 RING × 500 / 1000 = 1,5 lovelace ⟹ phải nộp 2,
 /// không phải 1. Một đơn vị nghe không đáng kể, nhưng chiều của phép làm tròn thì
 /// đáng kể: nó lặp lại ở mọi giao dịch.
 test rounding_favours_the_treasury() {
@@ -571,8 +571,8 @@ test escrow_rejects_a_datum_that_lies_about_its_holdings() {
   !run(
     9_999,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [to_operator(thousand_carp)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [to_operator(thousand_ring)],
       [],
       Some(5_000_000),
     ),
@@ -580,19 +580,19 @@ test escrow_rejects_a_datum_that_lies_about_its_holdings() {
 }
 
 /// Hai UTxO kho tạm trong một giao dịch bị chặn: nếu cho qua thì MỘT khoản nộp thoả
-/// điều kiện cho CẢ HAI, và một nửa số CARP rời kho không kèm đồng nào.
+/// điều kiện cho CẢ HAI, và một nửa số RING rời kho không kèm đồng nào.
 test escrow_rejects_two_escrow_inputs() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
       [
-        input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp)),
-        input_from(ref_at(1), escrow_utxo(2_000_000, thousand_carp)),
+        input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring)),
+        input_from(ref_at(1), escrow_utxo(2_000_000, thousand_ring)),
       ],
       [
         wallet_output(
           from_verification_key(operator_key),
-          value_with_carp(4_000_000, 2 * thousand_carp),
+          value_with_ring(4_000_000, 2 * thousand_ring),
         ),
       ],
       [],
@@ -605,10 +605,10 @@ test escrow_rejects_two_escrow_inputs() {
 /// vô hạn lần với khoản nộp bằng 0.
 test escrow_rejects_a_no_op_spend() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [remainder_utxo(2_000_000, thousand_carp)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [remainder_utxo(2_000_000, thousand_ring)],
       [],
       Some(500_000),
     ),
@@ -630,12 +630,12 @@ test escrow_datum_carries_the_vault_hash() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Phần DƯ đậu ở một địa chỉ dời nhà: cùng băm script kho tạm, khác phần uỷ quyền.
-fn rehomed_remainder_utxo(lovelace: Int, carp: Int) -> Output {
+fn rehomed_remainder_utxo(lovelace: Int, ring: Int) -> Output {
   rehomed_script_output(
     escrow_hash,
     stranger_key,
-    value_with_carp(lovelace, carp),
-    inline(escrow_datum(carp, Some(ref_at(0)), settled_listing)),
+    value_with_ring(lovelace, ring),
+    inline(escrow_datum(ring, Some(ref_at(0)), settled_listing)),
   )
 }
 
@@ -646,10 +646,10 @@ fn rehomed_remainder_utxo(lovelace: Int, carp: Int) -> Output {
 /// và không ai phải đi tìm bài dương ở chỗ khác mới đọc được phép đo.)
 test partial_release_passes_when_the_remainder_stays_at_its_exact_address() {
   run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [remainder_utxo(2_000_000, 600 * carp_one), to_operator(400 * carp_one)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [remainder_utxo(2_000_000, 600 * ring_one), to_operator(400 * ring_one)],
       [],
       Some(200_000),
     ),
@@ -660,18 +660,18 @@ test partial_release_passes_when_the_remainder_stays_at_its_exact_address() {
 ///
 /// `Donate` cố ý không đòi chữ ký ai, nên "kẻ dựng giao dịch" là bất kỳ ai. Không có
 /// phép so địa chỉ đầy đủ thì họ nộp sàn cho một phần nhỏ rồi trả toàn bộ phần còn lại
-/// về một địa chỉ cùng băm nhưng khác phần uỷ quyền: CARP vẫn nằm trong script, nhưng
+/// về một địa chỉ cùng băm nhưng khác phần uỷ quyền: RING vẫn nằm trong script, nhưng
 /// `utxosAt(escrowAddress)` trong `05_swap_and_donate.mjs` không thấy nó nữa — kịch bản
 /// đó dừng ngay ở câu "kho tạm phải có đúng 1 UTxO" — và phần thưởng uỷ quyền trên ADA
 /// giữ chỗ chảy về khoá của họ.
 test partial_release_cannot_rehome_the_remainder() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       [
-        rehomed_remainder_utxo(2_000_000, 600 * carp_one),
-        to_operator(400 * carp_one),
+        rehomed_remainder_utxo(2_000_000, 600 * ring_one),
+        to_operator(400 * ring_one),
       ],
       [],
       Some(200_000),
@@ -684,16 +684,16 @@ test partial_release_cannot_rehome_the_remainder() {
 /// Thu hẹp nó về so-địa-chỉ-đầy-đủ thì phần dư dời nhà rơi HẲN ra khỏi phép đo: nó không
 /// bị `continuing_honest` soi nữa, mà cũng không được đếm vào `returned` — nên `released`
 /// phình lên và giao dịch chỉ đơn giản đòi nộp nhiều hơn. Kẻ tấn công trả đủ số đó là
-/// dời được nhà. Bài này bắt đúng biến thể ấy: nộp ĐỦ SÀN cho cả 1000 CARP mà vẫn phải
+/// dời được nhà. Bài này bắt đúng biến thể ấy: nộp ĐỦ SÀN cho cả 1000 RING mà vẫn phải
 /// hỏng, vì phần dư 600 không được đậu lệch địa chỉ dù có trả bao nhiêu đi nữa.
 test rehomed_remainder_stays_rejected_even_when_the_floor_is_paid_in_full() {
   !run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       [
-        rehomed_remainder_utxo(2_000_000, 600 * carp_one),
-        to_operator(400 * carp_one),
+        rehomed_remainder_utxo(2_000_000, 600 * ring_one),
+        to_operator(400 * ring_one),
       ],
       [],
       Some(500_000),
@@ -704,8 +704,8 @@ test rehomed_remainder_stays_rejected_even_when_the_floor_is_paid_in_full() {
 // ─────────────────────────────────────────────────────────────────────────────
 // ĐẤU GIÁ GIẢM DẦN
 //
-// Khuôn chung: ô kho tạm 1000 CARP niêm yết tại `now_ms`, rời hết trong một lần. Tham số
-// thử: sàn 500, trần 5_000, phiên 604_800_000 ms. Giá cho 1000 CARP: trần 5_000_000,
+// Khuôn chung: ô kho tạm 1000 RING niêm yết tại `now_ms`, rời hết trong một lần. Tham số
+// thử: sàn 500, trần 5_000, phiên 604_800_000 ms. Giá cho 1000 RING: trần 5_000_000,
 // sàn 500_000. Mỗi cặp dương/âm khác nhau đúng MỘT lovelace.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -720,7 +720,7 @@ fn auction_with(
   at: Int,
   donated: Int,
 ) -> Bool {
-  let listed = escrow_datum(thousand_carp, None, now_ms)
+  let listed = escrow_datum(thousand_ring, None, now_ms)
   run_with(
     floor,
     start,
@@ -733,12 +733,12 @@ fn auction_with(
             ref_at(0),
             script_output(
               escrow_hash,
-              value_with_carp(2_000_000, thousand_carp),
+              value_with_ring(2_000_000, thousand_ring),
               inline(listed),
             ),
           ),
         ],
-        [to_operator(thousand_carp)],
+        [to_operator(thousand_ring)],
         [],
         Some(donated),
       ),
@@ -785,7 +785,7 @@ test price_after_the_auction_rejects_one_lovelace_below_the_floor() {
 ///   required = ⌈10¹² × (500 × 604_800_000 + 4_500 × 302_400_000) / (10⁹ × 604_800_000)⌉
 ///            = ⌈10¹² × 1_663_200_000_000 / 604_800_000_000_000_000⌉
 ///            = ⌈1_663_200_000_000_000_000_000_000 / 604_800_000_000_000_000⌉ = 2_750_000
-/// (chia hết: 2_750 lovelace mỗi CARP = sàn 500 + nửa khoảng 4_500).
+/// (chia hết: 2_750 lovelace mỗi RING = sàn 500 + nửa khoảng 4_500).
 test price_at_mid_auction_is_exact() {
   auction(now_ms + test_decay / 2, 2_750_000)
 }
@@ -812,7 +812,7 @@ fn auction_of(held: Int, at: Int, donated: Int) -> Bool {
             ref_at(0),
             script_output(
               escrow_hash,
-              value_with_carp(2_000_000, held),
+              value_with_ring(2_000_000, held),
               inline(listed),
             ),
           ),
@@ -826,46 +826,46 @@ fn auction_of(held: Int, at: Int, donated: Int) -> Bool {
   )
 }
 
-/// Giữa phiên, `released` = 1000 CARP + 1 đơn vị = 1_000_000_000_001 (lẻ).
-///   giá/CARP = (500 × 604_800_000 + 4_500 × 302_400_000) / 604_800_000 = 2_750 (nguyên)
+/// Giữa phiên, `released` = 1000 RING + 1 đơn vị = 1_000_000_000_001 (lẻ).
+///   giá/RING = (500 × 604_800_000 + 4_500 × 302_400_000) / 604_800_000 = 2_750 (nguyên)
 ///   required = ⌈1_000_000_000_001 × 2_750 / 10⁹⌉ = ⌈2_750_000_000_002_750 / 10⁹⌉
 ///            = ⌈2_750_000,00000275⌉ = 2_750_001   (chia thường cho 2_750_000)
 test mid_auction_rounds_up_for_an_odd_release() {
-  auction_of(thousand_carp + 1, now_ms + test_decay / 2, 2_750_001)
+  auction_of(thousand_ring + 1, now_ms + test_decay / 2, 2_750_001)
 }
 
 test mid_auction_rejects_the_rounded_down_amount() {
-  !auction_of(thousand_carp + 1, now_ms + test_decay / 2, 2_750_000)
+  !auction_of(thousand_ring + 1, now_ms + test_decay / 2, 2_750_000)
 }
 
-/// 1 ms sau niêm yết, 1000 CARP: remaining = 604_799_999, giá/CARP không nguyên.
+/// 1 ms sau niêm yết, 1000 RING: remaining = 604_799_999, giá/RING không nguyên.
 ///   required = ⌈10¹² × (500 × 604_800_000 + 4_500 × 604_799_999) / (10⁹ × 604_800_000)⌉
 ///            = ⌈1_000 × (3_024_000_000_000 − 4_500) / 604_800_000⌉
 ///            = ⌈(3_024_000_000_000_000 − 4_500_000) / 604_800_000⌉
 ///            = ⌈5_000_000 − 0,00744…⌉ = 5_000_000   (chia thường cho 4_999_999)
 test one_ms_after_listing_rounds_up() {
-  auction_of(thousand_carp, now_ms + 1, 5_000_000)
+  auction_of(thousand_ring, now_ms + 1, 5_000_000)
 }
 
 test one_ms_after_listing_rejects_the_rounded_down_amount() {
-  !auction_of(thousand_carp, now_ms + 1, 4_999_999)
+  !auction_of(thousand_ring, now_ms + 1, 4_999_999)
 }
 
-/// Ở sàn (sau phiên), `released` = 3 CARP + 1 đơn vị = 3_000_000_001 (lẻ).
+/// Ở sàn (sau phiên), `released` = 3 RING + 1 đơn vị = 3_000_000_001 (lẻ).
 ///   required = ⌈3_000_000_001 × 500 / 10⁹⌉ = ⌈1_500_000_000_500 / 10⁹⌉ = ⌈1_500,0000005⌉
 ///            = 1_501   (chia thường cho 1_500)
 test floor_price_rounds_up_for_an_odd_release() {
-  auction_of(3 * carp_one + 1, now_ms + 2 * test_decay, 1_501)
+  auction_of(3 * ring_one + 1, now_ms + 2 * test_decay, 1_501)
 }
 
 test floor_price_rejects_the_rounded_down_amount() {
-  !auction_of(3 * carp_one + 1, now_ms + 2 * test_decay, 1_500)
+  !auction_of(3 * ring_one + 1, now_ms + 2 * test_decay, 1_500)
 }
 
 /// Cận dưới để ngỏ: không có thời điểm định giá. Nộp gấp 10 lần trần vẫn hỏng. (Bài `fail`
 /// vì validator dừng bằng `fail` ở chỗ đọc cận dưới, không trả `False`.)
 test donate_rejects_an_unbounded_lower_validity_bound() fail {
-  let listed = escrow_datum(thousand_carp, None, now_ms)
+  let listed = escrow_datum(thousand_ring, None, now_ms)
   run_with(
     test_rate,
     test_start,
@@ -878,12 +878,12 @@ test donate_rejects_an_unbounded_lower_validity_bound() fail {
             ref_at(0),
             script_output(
               escrow_hash,
-              value_with_carp(2_000_000, thousand_carp),
+              value_with_ring(2_000_000, thousand_ring),
               inline(listed),
             ),
           ),
         ],
-        [to_operator(thousand_carp)],
+        [to_operator(thousand_ring)],
         [],
         Some(50_000_000),
       ),
@@ -906,23 +906,23 @@ test donate_rejects_a_non_positive_decay() {
 /// `partial_release_passes_when_the_remainder_stays_at_its_exact_address`.
 fn remainder_listed_at(listed_at: Int) -> Bool {
   run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       [
         script_output(
           escrow_hash,
-          value_with_carp(2_000_000, 600 * carp_one),
+          value_with_ring(2_000_000, 600 * ring_one),
           inline(
             EscrowDatum {
-              carp: 600 * carp_one,
+              ring: 600 * ring_one,
               vault: vault_hash,
               parent: Some(ref_at(0)),
               listed_at,
             },
           ),
         ),
-        to_operator(400 * carp_one),
+        to_operator(400 * ring_one),
       ],
       [],
       Some(200_000),
@@ -953,11 +953,11 @@ test remainder_cannot_move_listed_at_later() {
 const escrow2_hash: ByteArray =
   #"99999999999999999999999999999999999999999999999999999999"
 
-/// Hai ô kho tạm, một ở `escrow_hash` (ref 0), một ở `second` (ref 1), mỗi ô 1000 CARP,
-/// cả hai đã về sàn 500/CARP ⟹ mỗi ô một mình đòi nộp 500_000. Giao dịch mang redeemer
+/// Hai ô kho tạm, một ở `escrow_hash` (ref 0), một ở `second` (ref 1), mỗi ô 1000 RING,
+/// cả hai đã về sàn 500/RING ⟹ mỗi ô một mình đòi nộp 500_000. Giao dịch mang redeemer
 /// của CẢ HAI ô — đúng như sổ cái đòi khi tiêu hai ô script.
 fn two_escrow_tx(donated: Int, second: ByteArray) -> Transaction {
-  let d = escrow_datum(thousand_carp, None, settled_listing)
+  let d = escrow_datum(thousand_ring, None, settled_listing)
   Transaction {
     ..tx(
       [
@@ -965,7 +965,7 @@ fn two_escrow_tx(donated: Int, second: ByteArray) -> Transaction {
           ref_at(0),
           script_output(
             escrow_hash,
-            value_with_carp(2_000_000, thousand_carp),
+            value_with_ring(2_000_000, thousand_ring),
             inline(d),
           ),
         ),
@@ -973,12 +973,12 @@ fn two_escrow_tx(donated: Int, second: ByteArray) -> Transaction {
           ref_at(1),
           script_output(
             second,
-            value_with_carp(2_000_000, thousand_carp),
+            value_with_ring(2_000_000, thousand_ring),
             inline(d),
           ),
         ),
       ],
-      [to_operator(2 * thousand_carp)],
+      [to_operator(2 * thousand_ring)],
       [],
       Some(donated),
     ),
@@ -992,13 +992,13 @@ fn spend_as(own_ref: OutputReference, b: Transaction) -> Bool {
     test_start,
     test_decay,
     test_lot_min,
-    escrow_datum(thousand_carp, None, settled_listing),
+    escrow_datum(thousand_ring, None, settled_listing),
     own_ref,
     b,
   )
 }
 
-/// CỰC ÂM — PoC của lỗ "hai kho tạm dùng chung một khoản nộp". 2000 CARP rời hai kho,
+/// CỰC ÂM — PoC của lỗ "hai kho tạm dùng chung một khoản nộp". 2000 RING rời hai kho,
 /// đúng ra phải nộp 1_000_000; một khoản 500_000 từng thoả CẢ HAI ô. Nay cả hai ô hỏng.
 test r11a_two_escrow_instances_cannot_share_one_treasury_donation() {
   let b = two_escrow_tx(500_000, escrow2_hash)
@@ -1019,11 +1019,11 @@ test r11a_two_escrow_instances_rejected_even_when_both_are_paid() {
 test r11a_donate_rejects_any_other_script_in_the_transaction() {
   let other: Data = Void
   !run(
-    thousand_carp,
+    thousand_ring,
     Transaction {
       ..tx(
-        [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-        [to_operator(thousand_carp)],
+        [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+        [to_operator(thousand_ring)],
         [],
         Some(500_000),
       ),
@@ -1035,11 +1035,11 @@ test r11a_donate_rejects_any_other_script_in_the_transaction() {
 /// CỰC DƯƠNG của cặp trên: chỉ redeemer của chính ô, ghi tường minh.
 test r11a_donate_passes_with_exactly_its_own_redeemer() {
   run(
-    thousand_carp,
+    thousand_ring,
     Transaction {
       ..tx(
-        [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-        [to_operator(thousand_carp)],
+        [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+        [to_operator(thousand_ring)],
         [],
         Some(500_000),
       ),
@@ -1048,13 +1048,13 @@ test r11a_donate_passes_with_exactly_its_own_redeemer() {
   )
 }
 
-/// Khuôn nhả một phần: ô 1000 CARP / 2 ADA, ô dư theo tham số, phần còn lại ra ví.
-/// Nộp 500_000 — đủ sàn cho TRỌN 1000 CARP, nên không bài nào dưới đây hỏng vì sàn.
+/// Khuôn nhả một phần: ô 1000 RING / 2 ADA, ô dư theo tham số, phần còn lại ra ví.
+/// Nộp 500_000 — đủ sàn cho TRỌN 1000 RING, nên không bài nào dưới đây hỏng vì sàn.
 fn partial(remainders: List<Output>, released: Int) -> Bool {
   run(
-    thousand_carp,
+    thousand_ring,
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
       list.concat(remainders, [to_operator(released)]),
       [],
       Some(500_000),
@@ -1064,39 +1064,39 @@ fn partial(remainders: List<Output>, released: Int) -> Bool {
 
 /// CỰC DƯƠNG: một ô dư, cùng lovelace với ô vào.
 test r11b_one_remainder_with_equal_lovelace_passes() {
-  partial([remainder_utxo(2_000_000, 600 * carp_one)], 400 * carp_one)
+  partial([remainder_utxo(2_000_000, 600 * ring_one)], 400 * ring_one)
 }
 
 /// Ô dư nhiều lovelace hơn ô vào: qua (chỉ cấm GIẢM).
 test r11b_remainder_with_more_lovelace_passes() {
-  partial([remainder_utxo(2_000_001, 600 * carp_one)], 400 * carp_one)
+  partial([remainder_utxo(2_000_001, 600 * ring_one)], 400 * ring_one)
 }
 
 /// Ô dư ít hơn ô vào 1 lovelace: bác. Đây là đường bắn tỉa ADA giữ chỗ.
 test r11b_remainder_with_less_lovelace_is_rejected() {
-  !partial([remainder_utxo(1_999_999, 600 * carp_one)], 400 * carp_one)
+  !partial([remainder_utxo(1_999_999, 600 * ring_one)], 400 * ring_one)
 }
 
 /// Hai ô dư, mỗi ô khai đúng, đúng địa chỉ, đủ lovelace: bác vì là HAI ô.
 test r11b_two_remainders_are_rejected() {
   !partial(
     [
-      remainder_utxo(2_000_000, 300 * carp_one),
-      remainder_utxo(2_000_000, 300 * carp_one),
+      remainder_utxo(2_000_000, 300 * ring_one),
+      remainder_utxo(2_000_000, 300 * ring_one),
     ],
-    400 * carp_one,
+    400 * ring_one,
   )
 }
 
-/// Ô dư 0 CARP (nhả trọn 1000 CARP nhưng để lại một ô chỉ-ADA ở kho tạm): bác. Ô đó
+/// Ô dư 0 RING (nhả trọn 1000 RING nhưng để lại một ô chỉ-ADA ở kho tạm): bác. Ô đó
 /// không bao giờ tiêu lại được vì `released > 0` hỏng.
-test r11b_remainder_with_zero_carp_is_rejected() {
-  !partial([remainder_utxo(2_000_000, 0)], thousand_carp)
+test r11b_remainder_with_zero_ring_is_rejected() {
+  !partial([remainder_utxo(2_000_000, 0)], thousand_ring)
 }
 
 /// CỰC DƯƠNG của bài trên: nhả trọn, không ô dư.
 test r11b_full_release_without_remainder_passes() {
-  partial([], thousand_carp)
+  partial([], thousand_ring)
 }
 
 /// Khuôn lô tối thiểu: ô giữ `held`, nhả `released`, phần còn lại thành ô dư. Nộp dư dả
@@ -1120,28 +1120,28 @@ fn lot(held: Int, released: Int) -> Bool {
   )
 }
 
-/// Ô 1000 CARP, nhả 1 đơn vị nhỏ nhất: bác.
+/// Ô 1000 RING, nhả 1 đơn vị nhỏ nhất: bác.
 test r11c_donate_one_unit_when_held_exceeds_lot_min_is_rejected() {
-  !lot(thousand_carp, 1)
+  !lot(thousand_ring, 1)
 }
 
 /// Biên: nhả đúng `lot_min` thì qua, thiếu 1 đơn vị thì bác.
 test r11c_release_of_exactly_lot_min_passes() {
-  lot(thousand_carp, test_lot_min)
+  lot(thousand_ring, test_lot_min)
 }
 
 test r11c_release_one_unit_below_lot_min_is_rejected() {
-  !lot(thousand_carp, test_lot_min - 1)
+  !lot(thousand_ring, test_lot_min - 1)
 }
 
-/// Ô nhỏ hơn `lot_min` (5 CARP): nhả trọn thì qua — ô vụn không bị kẹt.
+/// Ô nhỏ hơn `lot_min` (5 RING): nhả trọn thì qua — ô vụn không bị kẹt.
 test r11c_full_release_below_lot_min_passes() {
-  lot(5 * carp_one, 5 * carp_one)
+  lot(5 * ring_one, 5 * ring_one)
 }
 
 /// Ô nhỏ hơn `lot_min`: nhả một phần thì bác — phải nhả trọn.
 test r11c_partial_release_below_lot_min_is_rejected() {
-  !lot(5 * carp_one, 4 * carp_one)
+  !lot(5 * ring_one, 4 * ring_one)
 }
 
 /// Tham số `lot_min` không dương là tham số hỏng (luật lô thành vô nghĩa). Giao dịch giống
@@ -1152,11 +1152,11 @@ test r11c_non_positive_lot_min_is_rejected() {
     test_start,
     test_decay,
     0,
-    escrow_datum(thousand_carp, None, settled_listing),
+    escrow_datum(thousand_ring, None, settled_listing),
     ref_at(0),
     tx(
-      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_carp))],
-      [remainder_utxo(2_000_000, thousand_carp - 1), to_operator(1)],
+      [input_from(ref_at(0), escrow_utxo(2_000_000, thousand_ring))],
+      [remainder_utxo(2_000_000, thousand_ring - 1), to_operator(1)],
       [],
       Some(10_000_000),
     ),

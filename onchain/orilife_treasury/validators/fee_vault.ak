@@ -1,8 +1,8 @@
-//// Kho phí OriLife. Phí dịch vụ chảy vào đây bằng CARP; một phần cố định của tổng
+//// Kho phí OriLife. Phí dịch vụ chảy vào đây bằng RING; một phần cố định của tổng
 //// dòng vào là NGHĨA VỤ phải chuyển sang kho tạm để đổi ADA nộp kho bạc Cardano.
 ////
 //// Ba câu bất biến, và ai cũng đọc được chúng trực tiếp từ UTxO:
-////   1. `collected` chỉ tăng, và tăng đúng bằng lượng CARP thật sự chảy vào.
+////   1. `collected` chỉ tăng, và tăng đúng bằng lượng RING thật sự chảy vào.
 ////   2. `skimmed` chỉ tăng, và không bao giờ vượt nghĩa vụ tính trên `collected`.
 ////   3. Tiêu vận hành không được chạm vào phần nghĩa vụ còn nợ.
 ////
@@ -22,7 +22,7 @@
 ////    `list.length(own_inputs) == 1` bên dưới chỉ đếm input CÙNG băm script, nên hai
 ////    instance kho phí khác tham số (khác băm) mỗi cái tự thấy mình là input duy nhất,
 ////    và MỘT output ở kho tạm thoả điều kiện cho CẢ HAI. Hai lần `skimmed` tăng, một
-////    lần CARP rời kho. Nay khoản trích phải khai đúng băm kho phí đã trích ra nó.
+////    lần RING rời kho. Nay khoản trích phải khai đúng băm kho phí đã trích ra nó.
 ////
 ////    Chỗ này không phải giả định xa: kho tạm KHÔNG nhận `skim_bps` hay `seed` làm tham
 ////    số, và thứ tự dựng là escrow TRƯỚC rồi vault mới nuốt `escrowHash`. Nên hễ đổi tỉ lệ
@@ -32,8 +32,8 @@
 //// 2. Khoản trích phải khai `parent = None`. Xem đầu `donation_escrow.ak`: kho tạm phân
 ////    biệt phần DƯ với khoản MỚI bằng trường đó, nên kho phí phải đóng dấu đúng.
 ////
-//// 3. `Operate` thiếu `carp_after <= carp_before`, tức nó là một cửa NẠP không ghi sổ:
-////    bơm CARP vào kho qua `Operate` thì `collected` đứng yên, và phần CARP đó không
+//// 3. `Operate` thiếu `ring_after <= ring_before`, tức nó là một cửa NẠP không ghi sổ:
+////    bơm RING vào kho qua `Operate` thì `collected` đứng yên, và phần RING đó không
 ////    bao giờ sinh nghĩa vụ.
 ////
 //// 4. Không có đường đóng kho, mà mọi nhánh đều ép `lovelace_of(ra) >= lovelace_of(vào)`
@@ -43,7 +43,7 @@
 //// 5. Mọi phép so về NƠI ĐẾN chỉ chạm `payment_credential`, tức phần uỷ quyền của địa
 ////    chỉ là một trường TỰ DO. `Address` có hai phần: cùng băm script mà khác phần uỷ
 ////    quyền là HAI địa chỉ trên chuỗi, cả hai đều chạy đúng validator này. Ghép với
-////    `Collect` — nhánh cố ý KHÔNG đòi chữ ký ai — thì bất kỳ ai cầm một chút CARP và
+////    `Collect` — nhánh cố ý KHÔNG đòi chữ ký ai — thì bất kỳ ai cầm một chút RING và
 ////    phí giao dịch cũng đẩy được ô kho sang một địa chỉ khác: tài sản không mất (vẫn
 ////    trong script), nhưng `utxosAt(<địa chỉ kho>)` mất dấu nó, mà đó đúng là cách cả
 ////    bốn kịch bản vận hành trong `onchain/scripts/` tìm ô kho. Kẻ dựng giao dịch còn
@@ -70,7 +70,7 @@
 //// 7. `datum` đổi sang `Option<Data>`. Trước đây `expect Some(VaultDatum{..}) = datum`
 ////    khoá chết mọi UTxO gửi nhầm (không datum, datum lạ): không nhánh nào tiêu lại được,
 ////    tức tài sản nằm TRONG sân kho mà NGOÀI sổ. Nay đầu vào lạc tiêu được, nhưng chỉ đi
-////    cùng ô sổ, và CARP của nó chỉ có một lối ra: vào sổ qua `Collect`. Lovelace và token
+////    cùng ô sổ, và RING của nó chỉ có một lối ra: vào sổ qua `Collect`. Lovelace và token
 ////    khác của nó KHÔNG bị ràng — thưởng cho người gom. Hệ quả: mọi UTxO phụ đặt tại địa
 ////    chỉ kho (kể cả một ô giữ reference script) là của chùa — đừng đặt gì ở đó.
 ////
@@ -81,16 +81,16 @@
 ////
 //// 9. Khoá vận hành chuyển từ tham số biên dịch vào datum (`VaultDatum.operator_key`), thêm
 ////    `Rotate`. Trước đây xoay khoá = `Close` rồi mở instance mới, mà `Close` đốt NFT sổ —
-////    `fee_inbox` bake băm kho cũ và đòi NFT của nó, nên mọi ô CARP còn trong hộp thư mất
+////    `fee_inbox` bake băm kho cũ và đòi NFT của nó, nên mọi ô RING còn trong hộp thư mất
 ////    đường vào sổ vĩnh viễn. `Rotate` đổi khoá tại chỗ: cùng địa chỉ, NFT, giá trị, sổ;
 ////    khoá hiện tại VÀ khoá mới cùng ký. `Collect`/`Skim`/`Operate` ép khoá giữ nguyên.
-////    `Close` vẫn bỏ rơi hộp thư nếu còn ô CARP — hợp đồng không thấy UTxO ngoài giao dịch
+////    `Close` vẫn bỏ rơi hộp thư nếu còn ô RING — hợp đồng không thấy UTxO ngoài giao dịch
 ////    nên không chặn được; `06_close_vault.mjs` chặn ở ngoài chuỗi.
 ////
-//// 10. Phần ngoài ADA và CARP của ô sổ đi ra phải BẰNG phần đó của ô sổ đi vào. Trước đây
+//// 10. Phần ngoài ADA và RING của ô sổ đi ra phải BẰNG phần đó của ô sổ đi vào. Trước đây
 ////    `shape_ok` chỉ ép địa chỉ, NFT, ADA không giảm; `Collect` và `Skim` không đòi chữ ký
-////    nên bất kỳ ai tước được mọi token khác CARP đang nằm trong ô sổ. Nay ô sổ không mất
-////    và cũng không nhận thêm token lạ; NFT sổ giữ đúng số lượng. CARP vẫn do từng nhánh ép.
+////    nên bất kỳ ai tước được mọi token khác RING đang nằm trong ô sổ. Nay ô sổ không mất
+////    và cũng không nhận thêm token lạ; NFT sổ giữ đúng số lượng. RING vẫn do từng nhánh ép.
 ////    Chốt này chỉ giữ nguyên thứ đã có, nên `Open` ép ô sổ mới mở chỉ mang ADA và đúng một
 ////    NFT sổ: token lạ nhét vào lúc mở sẽ không bao giờ rời ô sổ được.
 //// ─────────────────────────────────────────────────────────────────────────────
@@ -107,9 +107,9 @@ use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
 }
 use orilife/fixtures.{
-  carp_name, carp_policy, escrow_datum, escrow_hash, inbox_hash, inline,
+  ring_name, ring_policy, escrow_datum, escrow_hash, inbox_hash, inline,
   input_from, now_ms, operator_key, ref_at, rehomed_script_output, script_output,
-  seed_ref, skim_bps, stranger_key, tx, tx_window_ms, value_with_carp,
+  seed_ref, skim_bps, stranger_key, tx, tx_window_ms, value_with_ring,
   vault_hash, wallet_output, with_vault_nft,
 }
 use orilife/math.{ceil_div}
@@ -122,8 +122,8 @@ use orilife/types.{
 const bps_scale: Int = 10_000
 
 validator fee_vault(
-  carp_policy: PolicyId,
-  carp_name: AssetName,
+  ring_policy: PolicyId,
+  ring_name: AssetName,
   /// Phần trăm dòng vào phải nộp lại kho bạc, tính bằng điểm cơ bản. 1000 = 10%.
   skim_bps: Int,
   /// Băm hợp đồng kho tạm. Phần trích chỉ được đi về đúng một địa chỉ này.
@@ -177,10 +177,10 @@ validator fee_vault(
               // hành nằm lại mãi. Chữ ký là bằng chứng có người cầm khoá đó.
               list.has(tx.extra_signatories, operator_key),
               opened.reference_script == None,
-              // Mở kho kèm CARP là nạp không ghi sổ: số CARP đó không bao giờ sinh nghĩa vụ.
-              quantity_of(opened.value, carp_policy, carp_name) == 0,
+              // Mở kho kèm RING là nạp không ghi sổ: số RING đó không bao giờ sinh nghĩa vụ.
+              quantity_of(opened.value, ring_policy, ring_name) == 0,
               // Ngoài ADA, ô sổ mới mở chỉ mang đúng một NFT sổ. Các nhánh tiêu ép phần
-              // ngoài ADA và CARP giữ nguyên từ ô vào sang ô ra (ghi chú 10), nên token lạ
+              // ngoài ADA và RING giữ nguyên từ ô vào sang ô ra (ghi chú 10), nên token lạ
               // nhét vào lúc mở sẽ nằm lì trong ô sổ suốt đời kho: chốt đó không bao lúc mở.
               without_lovelace(opened.value) == from_asset(
                 policy_id,
@@ -230,7 +230,7 @@ validator fee_vault(
         own_inputs,
         fn(input) { holds_vault_nft(input.output, own_hash) },
       )
-    let stray_carp =
+    let stray_ring =
       list.foldl(
         own_inputs,
         0,
@@ -238,7 +238,7 @@ validator fee_vault(
           if holds_vault_nft(input.output, own_hash) {
             acc
           } else {
-            acc + quantity_of(input.output.value, carp_policy, carp_name)
+            acc + quantity_of(input.output.value, ring_policy, ring_name)
           }
         },
       )
@@ -286,9 +286,9 @@ validator fee_vault(
             operator_key: next_operator_key,
           }: VaultDatum = raw_next
 
-          let carp_before =
-            quantity_of(own_input.output.value, carp_policy, carp_name)
-          let carp_after = quantity_of(continuing.value, carp_policy, carp_name)
+          let ring_before =
+            quantity_of(own_input.output.value, ring_policy, ring_name)
+          let ring_after = quantity_of(continuing.value, ring_policy, ring_name)
 
           // Nghĩa vụ CÒN NỢ sau khi giao dịch này xong, tính trên tổng dòng vào mới.
           // Làm tròn LÊN — cùng chiều với trần được trích ở nhánh `Skim`, nếu không thì
@@ -319,18 +319,18 @@ validator fee_vault(
               ),
               // Nghĩa vụ không bao giờ âm: `skimmed` không vượt phần tính trên `collected`.
               owed >= 0,
-              // Ngoài ADA và CARP, ô sổ giữ nguyên từng token, kể cả NFT sổ. Không có câu
+              // Ngoài ADA và RING, ô sổ giữ nguyên từng token, kể cả NFT sổ. Không có câu
               // này thì `Collect`/`Skim` (không ai ký) tước được token lạ khỏi ô sổ.
               add(
                 without_lovelace(continuing.value),
-                carp_policy,
-                carp_name,
-                -carp_after,
+                ring_policy,
+                ring_name,
+                -ring_after,
               ) == add(
                 without_lovelace(own_input.output.value),
-                carp_policy,
-                carp_name,
-                -carp_before,
+                ring_policy,
+                ring_name,
+                -ring_before,
               ),
             }
 
@@ -340,34 +340,34 @@ validator fee_vault(
               // vào, nên khai gian là giao dịch hỏng chứ không phải là lợi.
               Collect { amount } -> and {
                   amount > 0,
-                  carp_after - carp_before == amount,
-                  // CARP của MỌI đầu vào khoá bằng script (trừ chính ô sổ) phải vào sổ:
+                  ring_after - ring_before == amount,
+                  // RING của MỌI đầu vào khoá bằng script (trừ chính ô sổ) phải vào sổ:
                   // ô lạc của kho, ô của MỌI phiên bản hộp thư, và script bất kỳ khác.
                   // Hộp thư bake băm kho nhưng kho không biết băm hộp thư; chỉ đếm ô lạc
                   // của kho thì hai phiên bản hộp thư cùng gom, mỗi `withdraw` chỉ thấy
-                  // CARP của chính nó, và sổ chỉ cần tăng bằng phần của MỘT bên.
+                  // RING của chính nó, và sổ chỉ cần tăng bằng phần của MỘT bên.
                   // Tổng dưới đây gồm cả ô sổ (nó cũng là đầu vào script) nên trừ
-                  // `carp_before` để ra "mọi đầu vào script trừ ô sổ" — rẻ hơn so
+                  // `ring_before` để ra "mọi đầu vào script trừ ô sổ" — rẻ hơn so
                   // `output_reference` của từng đầu vào.
-                  carp_after - carp_before >= script_inputs_carp(
+                  ring_after - ring_before >= script_inputs_ring(
                     tx.inputs,
-                    carp_policy,
-                    carp_name,
-                  ) - carp_before,
+                    ring_policy,
+                    ring_name,
+                  ) - ring_before,
                   next_collected == collected + amount,
                   next_skimmed == skimmed,
                   // `Collect` không đòi chữ ký ai, nên để trống trường này là trao khoá vận
-                  // hành cho bất kỳ ai cầm một chút CARP.
+                  // hành cho bất kỳ ai cầm một chút RING.
                   next_operator_key == operator_key,
                 }
 
               // Trích phần nghĩa vụ sang kho tạm.
               Skim { amount } -> and {
                   amount > 0,
-                  // CARP lạc chỉ có một lối ra là vào sổ. Cho nó đi kèm `Skim` là cho nó
+                  // RING lạc chỉ có một lối ra là vào sổ. Cho nó đi kèm `Skim` là cho nó
                   // ra ví mà không dòng nào ghi lại.
-                  stray_carp == 0,
-                  carp_before - carp_after == amount,
+                  stray_ring == 0,
+                  ring_before - ring_after == amount,
                   next_collected == collected,
                   next_skimmed == skimmed + amount,
                   // `Skim` cũng không đòi chữ ký ai — cùng lý do với `Collect`.
@@ -379,35 +379,35 @@ validator fee_vault(
                     tx,
                     escrow_hash,
                     own_hash,
-                    carp_policy,
-                    carp_name,
+                    ring_policy,
+                    ring_name,
                     amount,
                     listing_window_ms,
                   ),
                 }
 
-              // Tiêu phần vận hành. Đây là chỗ DUY NHẤT CARP rời kho mà không sang kho tạm.
+              // Tiêu phần vận hành. Đây là chỗ DUY NHẤT RING rời kho mà không sang kho tạm.
               Operate -> and {
                   list.has(tx.extra_signatories, operator_key),
-                  // Khoá vận hành không có quyền gì trên CARP lạc: chưa vào sổ thì chưa
+                  // Khoá vận hành không có quyền gì trên RING lạc: chưa vào sổ thì chưa
                   // sinh nghĩa vụ, nên cho nó ra theo `Operate` là rút trước khi ghi.
-                  stray_carp == 0,
+                  stray_ring == 0,
                   next_collected == collected,
                   next_skimmed == skimmed,
                   // Đổi khoá chỉ qua `Rotate`, nơi khoá MỚI cũng phải ký. Để `Operate` đổi
                   // được là cho phép ghi một khoá không ai cầm — khoá vận hành tự khoá mình.
                   next_operator_key == operator_key,
                   // Chỉ được RÚT ra, không được nạp vào. Nạp qua đây là nạp không ghi sổ:
-                  // `collected` đứng yên nên phần CARP đó không bao giờ sinh nghĩa vụ.
+                  // `collected` đứng yên nên phần RING đó không bao giờ sinh nghĩa vụ.
                   // Muốn nạp thì gọi `Collect`.
-                  carp_after <= carp_before,
+                  ring_after <= ring_before,
                   // Phần còn lại phải phủ được nghĩa vụ còn nợ.
-                  carp_after >= owed,
+                  ring_after >= owed,
                 }
 
               // Xoay khoá vận hành tại chỗ: cùng địa chỉ (`shape_ok`), cùng NFT, cùng giá
               // trị, cùng sổ — chỉ khoá đổi. Đây là đường thay cho "Close rồi mở instance
-              // mới", vì `Close` đốt NFT và bỏ rơi mọi ô CARP còn ở hộp thư.
+              // mới", vì `Close` đốt NFT và bỏ rơi mọi ô RING còn ở hộp thư.
               Rotate -> and {
                   // Khoá HIỆN TẠI — đọc từ datum đầu vào. Khoá cũ sau một lần xoay không
                   // còn nằm ở đâu để được đọc.
@@ -415,11 +415,11 @@ validator fee_vault(
                   // Khoá MỚI cũng ký: chứng minh có người cầm nó. Ghi nhầm một băm là mất
                   // vĩnh viễn `Operate`/`Rotate`/`Close`.
                   list.has(tx.extra_signatories, next_operator_key),
-                  // CARP lạc chưa vào sổ thì chỉ có lối ra là `Collect`.
-                  stray_carp == 0,
+                  // RING lạc chưa vào sổ thì chỉ có lối ra là `Collect`.
+                  stray_ring == 0,
                   next_collected == collected,
                   next_skimmed == skimmed,
-                  // Giá trị y nguyên — CARP, ADA, NFT, token khác. `shape_ok` chỉ chặn ADA
+                  // Giá trị y nguyên — RING, ADA, NFT, token khác. `shape_ok` chỉ chặn ADA
                   // giảm và NFT mất; ở đây không có lý do gì để giá trị đổi.
                   continuing.value == own_input.output.value,
                 }
@@ -433,7 +433,7 @@ validator fee_vault(
       }
     } else {
       // Đầu vào LẠC. Hợp lệ khi và chỉ khi ô sổ thật cùng bị tiêu, ô sổ đi ra, và phần
-      // CARP sổ tăng phủ được CARP của MỌI đầu vào lạc ở script này. Không đòi chữ ký ai
+      // RING sổ tăng phủ được RING của MỌI đầu vào lạc ở script này. Không đòi chữ ký ai
       // và không mở quyền mới cho khoá vận hành: nhánh của chính ô sổ vẫn chạy đủ luật.
       let ledger_outputs =
         list.filter(
@@ -442,11 +442,11 @@ validator fee_vault(
         )
       when (ledger_inputs, ledger_outputs) is {
         ([ledger_input], [ledger_output]) ->
-          quantity_of(ledger_output.value, carp_policy, carp_name) - quantity_of(
+          quantity_of(ledger_output.value, ring_policy, ring_name) - quantity_of(
             ledger_input.output.value,
-            carp_policy,
-            carp_name,
-          ) >= stray_carp
+            ring_policy,
+            ring_name,
+          ) >= stray_ring
         _ -> False
       }
     }
@@ -461,8 +461,8 @@ fn find_input(inputs: List<Input>, own_ref: OutputReference) -> Option<Input> {
   list.find(inputs, fn(input) { input.output_reference == own_ref })
 }
 
-/// Tổng CARP của mọi đầu vào có phần thanh toán là script (kể cả ô đang tiêu).
-fn script_inputs_carp(
+/// Tổng RING của mọi đầu vào có phần thanh toán là script (kể cả ô đang tiêu).
+fn script_inputs_ring(
   inputs: List<Input>,
   policy: PolicyId,
   name: AssetName,
@@ -485,7 +485,7 @@ fn holds_vault_nft(output: Output, policy: PolicyId) -> Bool {
   quantity_of(output.value, policy, vault_nft_name) == 1
 }
 
-/// Đúng một UTxO đi về kho tạm, ĐẬU ĐÚNG ĐỊA CHỈ kho tạm, mang đúng `amount` CARP, khai
+/// Đúng một UTxO đi về kho tạm, ĐẬU ĐÚNG ĐỊA CHỈ kho tạm, mang đúng `amount` RING, khai
 /// đúng con số đó, khai đúng băm kho phí đã trích ra nó, khai mình là khoản MỚI
 /// (`parent = None`), và khai mốc mở phiên đấu giá đúng bằng cận trên khoảng hiệu lực.
 ///
@@ -495,7 +495,7 @@ fn holds_vault_nft(output: Output, policy: PolicyId) -> Bool {
 ///     (`onchain/scripts/common.mjs`), tức địa chỉ enterprise KHÔNG phần uỷ quyền, và
 ///     `05_swap_and_donate.mjs` tìm nó bằng `utxosAt(escrowAddress)`. Thiếu câu này thì
 ///     `Skim` đẩy được tiền tới một địa chỉ mà chính đường nộp kho bạc không tìm ra.
-///   * `carp == amount` — chặn khai lệch để lần sau rời kho tạm rẻ hơn thực tế;
+///   * `ring == amount` — chặn khai lệch để lần sau rời kho tạm rẻ hơn thực tế;
 ///   * `vault == own_hash` — chặn hai instance kho phí dùng chung MỘT khoản trích;
 ///   * `parent == None` — chặn khoản trích tự nhận là "phần dư" của một ô kho tạm nào đó,
 ///     là chính cái làm phép đo `giữ − trả_lại` bên kho tạm sai;
@@ -519,7 +519,7 @@ fn escrow_receives(
   when to_escrow is {
     [only] -> {
       expect InlineDatum(raw) = only.datum
-      expect EscrowDatum { carp, vault, parent, listed_at }: EscrowDatum = raw
+      expect EscrowDatum { ring, vault, parent, listed_at }: EscrowDatum = raw
       when
         (
           tx.validity_range.lower_bound.bound_type,
@@ -529,7 +529,7 @@ fn escrow_receives(
         (Finite(lower), Finite(upper)) -> and {
             only.address == from_script(escrow_hash),
             quantity_of(only.value, policy, name) == amount,
-            carp == amount,
+            ring == amount,
             vault == own_hash,
             parent == None,
             listing_window_ms > 0,
@@ -564,8 +564,8 @@ fn spend_with(
   tx_body: Transaction,
 ) -> Bool {
   fee_vault.spend(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     skim_bps,
     escrow_hash,
     window,
@@ -594,35 +594,35 @@ fn run_at(
 }
 
 /// Ô sổ thật: ở địa chỉ kho, giữ NFT.
-fn vault_utxo(lovelace: Int, carp: Int, d: VaultDatum) -> Output {
+fn vault_utxo(lovelace: Int, ring: Int, d: VaultDatum) -> Output {
   script_output(
     vault_hash,
-    with_vault_nft(value_with_carp(lovelace, carp)),
+    with_vault_nft(value_with_ring(lovelace, ring)),
     inline(d),
   )
 }
 
 /// Ô ở địa chỉ kho, datum đúng khuôn sổ, nhưng KHÔNG giữ NFT.
-fn bare_vault_utxo(lovelace: Int, carp: Int, d: VaultDatum) -> Output {
-  script_output(vault_hash, value_with_carp(lovelace, carp), inline(d))
+fn bare_vault_utxo(lovelace: Int, ring: Int, d: VaultDatum) -> Output {
+  script_output(vault_hash, value_with_ring(lovelace, ring), inline(d))
 }
 
 /// UTxO gửi nhầm tới địa chỉ kho bằng ví thường: không datum.
-fn stray_utxo(carp: Int) -> Output {
-  script_output(vault_hash, value_with_carp(3_000_000, carp), NoDatum)
+fn stray_utxo(ring: Int) -> Output {
+  script_output(vault_hash, value_with_ring(3_000_000, ring), NoDatum)
 }
 
 /// Khoản trích đúng khuôn: khai đủ mọi thứ kho phí đòi.
-fn skim_output(carp: Int) -> Output {
+fn skim_output(ring: Int) -> Output {
   script_output(
     escrow_hash,
-    value_with_carp(2_000_000, carp),
-    inline(escrow_datum(carp, None, listed_now)),
+    value_with_ring(2_000_000, ring),
+    inline(escrow_datum(ring, None, listed_now)),
   )
 }
 
-fn to(key: ByteArray, carp: Int) -> Output {
-  wallet_output(from_verification_key(key), value_with_carp(2_000_000, carp))
+fn to(key: ByteArray, ring: Int) -> Output {
+  wallet_output(from_verification_key(key), value_with_ring(2_000_000, ring))
 }
 
 /// Giao dịch đóng kho: như `tx`, cộng việc đốt NFT sổ.
@@ -640,26 +640,26 @@ fn close_tx(
 
 /// Ô kho ĐI RA ở cùng băm script nhưng gắn phần uỷ quyền của một khoá lạ — tức một địa
 /// chỉ KHÁC trên chuỗi, vẫn chạy đúng validator này.
-fn rehomed_vault_utxo(lovelace: Int, carp: Int, d: VaultDatum) -> Output {
+fn rehomed_vault_utxo(lovelace: Int, ring: Int, d: VaultDatum) -> Output {
   rehomed_script_output(
     vault_hash,
     stranger_key,
-    with_vault_nft(value_with_carp(lovelace, carp)),
+    with_vault_nft(value_with_ring(lovelace, ring)),
     inline(d),
   )
 }
 
 /// Khoản trích đi về đúng băm kho tạm nhưng ở một địa chỉ dời nhà.
-fn rehomed_skim_output(carp: Int) -> Output {
+fn rehomed_skim_output(ring: Int) -> Output {
   rehomed_script_output(
     escrow_hash,
     stranger_key,
-    value_with_carp(2_000_000, carp),
-    inline(escrow_datum(carp, None, listed_now)),
+    value_with_ring(2_000_000, ring),
+    inline(escrow_datum(ring, None, listed_now)),
   )
 }
 
-/// Nộp phí: `collected` tăng đúng bằng lượng CARP thật sự chảy vào.
+/// Nộp phí: `collected` tăng đúng bằng lượng RING thật sự chảy vào.
 test collect_records_the_exact_inflow() {
   let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
   let after = VaultDatum { collected: 500, skimmed: 0, operator_key }
@@ -692,7 +692,7 @@ test collect_rejects_an_overstated_amount() {
   )
 }
 
-/// Khai ít hơn số thật vào cũng hỏng. Nếu cho qua thì kẻ nộp có thể "tặng" CARP mà
+/// Khai ít hơn số thật vào cũng hỏng. Nếu cho qua thì kẻ nộp có thể "tặng" RING mà
 /// không làm tăng nghĩa vụ — nghe như thiệt cho họ, nhưng nó phá sổ.
 test collect_rejects_an_understated_amount() {
   let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
@@ -772,7 +772,7 @@ test skim_escrow_datum_must_match_the_value() {
         vault_utxo(2_000_000, 900, after),
         script_output(
           escrow_hash,
-          value_with_carp(2_000_000, 100),
+          value_with_ring(2_000_000, 100),
           inline(escrow_datum(1, None, listed_now)),
         ),
       ],
@@ -787,7 +787,7 @@ test skim_escrow_datum_must_match_the_value() {
 /// Không có câu này thì hai instance kho phí khác tham số cùng `Skim` một lượng trong
 /// MỘT giao dịch sẽ cùng thoả — mỗi cái chỉ đếm input cùng băm với mình nên đều thấy
 /// mình là input duy nhất, và cùng chấp nhận một output ở kho tạm. Hai lần `skimmed`
-/// tăng, một lần CARP rời kho.
+/// tăng, một lần RING rời kho.
 test skim_output_must_name_this_vault() {
   let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
@@ -800,10 +800,10 @@ test skim_output_must_name_this_vault() {
         vault_utxo(2_000_000, 900, after),
         script_output(
           escrow_hash,
-          value_with_carp(2_000_000, 100),
+          value_with_ring(2_000_000, 100),
           inline(
             EscrowDatum {
-              carp: 100,
+              ring: 100,
               vault: stranger_key,
               parent: None,
               listed_at: listed_now,
@@ -831,7 +831,7 @@ test skim_output_must_be_a_fresh_deposit() {
         vault_utxo(2_000_000, 900, after),
         script_output(
           escrow_hash,
-          value_with_carp(2_000_000, 100),
+          value_with_ring(2_000_000, 100),
           inline(escrow_datum(100, Some(ref_at(9)), listed_now)),
         ),
       ],
@@ -873,9 +873,9 @@ test operate_cannot_touch_the_reserve() {
   )
 }
 
-/// `Operate` KHÔNG phải cửa nạp. Bơm CARP vào kho qua đây thì `collected` đứng yên, nên
-/// phần CARP đó không bao giờ sinh nghĩa vụ — nạp thì phải gọi `Collect`.
-test operate_cannot_add_carp_without_recording_it() {
+/// `Operate` KHÔNG phải cửa nạp. Bơm RING vào kho qua đây thì `collected` đứng yên, nên
+/// phần RING đó không bao giờ sinh nghĩa vụ — nạp thì phải gọi `Collect`.
+test operate_cannot_add_ring_without_recording_it() {
   let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
@@ -1054,7 +1054,7 @@ test collect_passes_when_the_vault_stays_at_its_exact_address() {
 /// CỰC ÂM — ĐÂY LÀ BÀI CỦA LỖ ĐÃ VÁ.
 ///
 /// `Collect` không đòi chữ ký ai, cố ý. Nên nếu nơi đến chỉ bị soi theo băm script thì
-/// bất kỳ ai cầm một chút CARP và phí giao dịch cũng đẩy được ô kho sang một địa chỉ
+/// bất kỳ ai cầm một chút RING và phí giao dịch cũng đẩy được ô kho sang một địa chỉ
 /// khác cùng băm: tài sản không rời script, nhưng `utxosAt(vaultAddress)` — cách cả bốn
 /// kịch bản trong `onchain/scripts/` tìm ô kho — mất dấu nó, và phần thưởng uỷ quyền
 /// trên toàn bộ ADA giữ chỗ chảy về khoá của kẻ dựng giao dịch, lặp mỗi epoch.
@@ -1193,8 +1193,8 @@ fn mint_with(
   tx_body: Transaction,
 ) -> Bool {
   fee_vault.mint(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     bps,
     escrow_hash,
     window,
@@ -1397,8 +1397,8 @@ test open_rejects_a_wrong_token_name() {
   )
 }
 
-/// Mở kho kèm CARP là nạp không ghi sổ.
-test open_rejects_carp_in_the_opening_output() {
+/// Mở kho kèm RING là nạp không ghi sổ.
+test open_rejects_ring_in_the_opening_output() {
   !run_mint(
     Open,
     open_tx(
@@ -1406,7 +1406,7 @@ test open_rejects_carp_in_the_opening_output() {
       [
         script_output(
           vault_hash,
-          with_vault_nft(value_with_carp(2_000_000, 500)),
+          with_vault_nft(value_with_ring(2_000_000, 500)),
           inline(empty_ledger()),
         ),
       ],
@@ -1564,7 +1564,7 @@ test operate_rejects_a_continuing_output_without_the_nft() {
         bare_vault_utxo(2_000_000, 100, state),
         wallet_output(
           from_verification_key(operator_key),
-          with_vault_nft(value_with_carp(2_000_000, 900)),
+          with_vault_nft(value_with_ring(2_000_000, 900)),
         ),
       ],
       [operator_key],
@@ -1584,7 +1584,7 @@ test close_requires_the_burn() {
       [
         wallet_output(
           from_verification_key(operator_key),
-          with_vault_nft(value_with_carp(2_000_000, 900)),
+          with_vault_nft(value_with_ring(2_000_000, 900)),
         ),
       ],
       [operator_key],
@@ -1630,9 +1630,9 @@ fn stray_sweep(ledger_gain: Int, stray: Output) -> Transaction {
   )
 }
 
-/// CỰC DƯƠNG. UTxO gửi nhầm không datum, mang 100 CARP: gom được vào `Collect`, CARP vào
+/// CỰC DƯƠNG. UTxO gửi nhầm không datum, mang 100 RING: gom được vào `Collect`, RING vào
 /// sổ, lovelace của nó về người gom. Cả hai lượt chạy (ô sổ và ô lạc) đều qua.
-test a_stray_datumless_utxo_is_swept_into_collect_with_its_carp_recorded() {
+test a_stray_datumless_utxo_is_swept_into_collect_with_its_ring_recorded() {
   let sweep = stray_sweep(100, stray_utxo(100))
   and {
     run(empty_ledger(), Collect { amount: 100 }, sweep),
@@ -1644,7 +1644,7 @@ test a_stray_datumless_utxo_is_swept_into_collect_with_its_carp_recorded() {
 test a_stray_utxo_with_a_foreign_datum_is_also_sweepable() {
   let foreign: Data = 42
   let stray =
-    script_output(vault_hash, value_with_carp(3_000_000, 100), inline(foreign))
+    script_output(vault_hash, value_with_ring(3_000_000, 100), inline(foreign))
   run_at(
     ref_at(1),
     Some(foreign),
@@ -1654,12 +1654,12 @@ test a_stray_utxo_with_a_foreign_datum_is_also_sweepable() {
 }
 
 /// Phía ô sổ: sổ chỉ ghi 50 trong khi đầu vào lạc mang 100.
-test collect_must_record_the_carp_of_stray_inputs() {
+test collect_must_record_the_ring_of_stray_inputs() {
   !run(empty_ledger(), Collect { amount: 50 }, stray_sweep(50, stray_utxo(100)))
 }
 
 /// Phía ô lạc: cùng giao dịch, kiểm từ lượt chạy của chính ô lạc.
-test a_stray_input_rejects_a_ledger_gain_below_its_carp() {
+test a_stray_input_rejects_a_ledger_gain_below_its_ring() {
   !run_at(
     ref_at(1),
     None,
@@ -1668,9 +1668,9 @@ test a_stray_input_rejects_a_ledger_gain_below_its_carp() {
   )
 }
 
-/// CARP lạc không ra theo `Operate`. Ô sổ giữ đúng như bài dương
-/// `operate_may_spend_above_the_reserve`; khác đúng một ô lạc 100 CARP đi ra ví vận hành.
-test stray_carp_cannot_leave_via_operate() {
+/// RING lạc không ra theo `Operate`. Ô sổ giữ đúng như bài dương
+/// `operate_may_spend_above_the_reserve`; khác đúng một ô lạc 100 RING đi ra ví vận hành.
+test stray_ring_cannot_leave_via_operate() {
   let state = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   !run(
     state,
@@ -1687,9 +1687,9 @@ test stray_carp_cannot_leave_via_operate() {
   )
 }
 
-/// CARP lạc không ra theo `Skim`. Ô sổ và khoản trích đúng như bài dương
-/// `skim_moves_exactly_the_obligation`; khác đúng một ô lạc 100 CARP đi ra ví lạ.
-test stray_carp_cannot_leave_via_skim() {
+/// RING lạc không ra theo `Skim`. Ô sổ và khoản trích đúng như bài dương
+/// `skim_moves_exactly_the_obligation`; khác đúng một ô lạc 100 RING đi ra ví lạ.
+test stray_ring_cannot_leave_via_skim() {
   let before = VaultDatum { collected: 1_000, skimmed: 0, operator_key }
   let after = VaultDatum { collected: 1_000, skimmed: 100, operator_key }
   !run(
@@ -1827,7 +1827,7 @@ test collect_accepts_inbox_inputs_alongside_the_ledger() {
         input_from(ref_at(0), vault_utxo(2_000_000, 0, empty_ledger())),
         input_from(
           ref_at(1),
-          script_output(inbox_hash, value_with_carp(2_000_000, 100), NoDatum),
+          script_output(inbox_hash, value_with_ring(2_000_000, 100), NoDatum),
         ),
       ],
       [
@@ -1866,7 +1866,7 @@ fn skim_in(window: Int, range, listed_at: Int) -> Bool {
           vault_utxo(2_000_000, 900, after),
           script_output(
             escrow_hash,
-            value_with_carp(2_000_000, 100),
+            value_with_ring(2_000_000, 100),
             inline(escrow_datum(100, None, listed_at)),
           ),
         ],
@@ -1948,7 +1948,7 @@ fn sweep_of(n: Int) -> Transaction {
         fn(i) {
           input_from(
             ref_at(i),
-            script_output(inbox_hash, value_with_carp(2_000_000, 100), NoDatum),
+            script_output(inbox_hash, value_with_ring(2_000_000, 100), NoDatum),
           )
         },
       )
@@ -1982,7 +1982,7 @@ test budget_vault_sweep_of_50_collect() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ĐỢT SỬA R11-d. `Collect` đếm CARP của MỌI đầu vào script, không chỉ ô lạc của kho.
+// ĐỢT SỬA R11-d. `Collect` đếm RING của MỌI đầu vào script, không chỉ ô lạc của kho.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Băm của một phiên bản hộp thư THỨ HAI cùng trỏ vào kho này (khác mã ⟹ khác băm).
@@ -1993,14 +1993,14 @@ const inbox2_hash: ByteArray =
 const foreign_hash: ByteArray =
   #"77777777777777777777777777777777777777777777777777777777"
 
-/// Gom 100 CARP từ hộp thư `inbox_hash` và 100 CARP từ hộp thư `inbox2_hash` cùng lúc;
-/// sổ tăng `gain`, người gom cầm `200 − gain` CARP.
+/// Gom 100 RING từ hộp thư `inbox_hash` và 100 RING từ hộp thư `inbox2_hash` cùng lúc;
+/// sổ tăng `gain`, người gom cầm `200 − gain` RING.
 fn two_inbox_sweep(gain: Int) -> Transaction {
   let inputs =
     [
       vault_utxo(2_000_000, 0, empty_ledger()),
-      script_output(inbox_hash, value_with_carp(2_000_000, 100), NoDatum),
-      script_output(inbox2_hash, value_with_carp(2_000_000, 100), NoDatum),
+      script_output(inbox_hash, value_with_ring(2_000_000, 100), NoDatum),
+      script_output(inbox2_hash, value_with_ring(2_000_000, 100), NoDatum),
     ]
   Transaction {
     ..tx(
@@ -2011,7 +2011,7 @@ fn two_inbox_sweep(gain: Int) -> Transaction {
           gain,
           VaultDatum { collected: gain, skimmed: 0, operator_key },
         ),
-        stranger_with(value_with_carp(4_000_000, 200 - gain)),
+        stranger_with(value_with_ring(4_000_000, 200 - gain)),
       ],
       [],
       None,
@@ -2021,7 +2021,7 @@ fn two_inbox_sweep(gain: Int) -> Transaction {
 }
 
 /// CỰC ÂM — PoC của lỗ "hai phiên bản hộp thư". Mỗi `withdraw` của hộp thư chỉ đòi sổ
-/// tăng ≥ 100 (CARP của chính nó) nên cả hai qua; kho phải là nơi chặn.
+/// tăng ≥ 100 (RING của chính nó) nên cả hai qua; kho phải là nơi chặn.
 test r11d_two_inbox_versions_cannot_share_one_ledger_gain() {
   !run(empty_ledger(), Collect { amount: 100 }, two_inbox_sweep(100))
 }
@@ -2036,13 +2036,13 @@ test r11d_two_inbox_versions_pass_when_the_ledger_records_both() {
   run(empty_ledger(), Collect { amount: 200 }, two_inbox_sweep(200))
 }
 
-/// Ô sổ + một hộp thư 100 + một script lạ 50 CARP; sổ tăng `gain`.
+/// Ô sổ + một hộp thư 100 + một script lạ 50 RING; sổ tăng `gain`.
 fn foreign_sweep(gain: Int) -> Transaction {
   let inputs =
     [
       vault_utxo(2_000_000, 0, empty_ledger()),
-      script_output(inbox_hash, value_with_carp(2_000_000, 100), NoDatum),
-      script_output(foreign_hash, value_with_carp(2_000_000, 50), NoDatum),
+      script_output(inbox_hash, value_with_ring(2_000_000, 100), NoDatum),
+      script_output(foreign_hash, value_with_ring(2_000_000, 50), NoDatum),
     ]
   tx(
     list.indexed_map(inputs, fn(i, o) { input_from(ref_at(i), o) }),
@@ -2052,15 +2052,15 @@ fn foreign_sweep(gain: Int) -> Transaction {
         gain,
         VaultDatum { collected: gain, skimmed: 0, operator_key },
       ),
-      stranger_with(value_with_carp(4_000_000, 150 - gain)),
+      stranger_with(value_with_ring(4_000_000, 150 - gain)),
     ],
     [],
     None,
   )
 }
 
-/// CARP của một script lạ bất kỳ đi qua `Collect` cũng phải vào sổ.
-test r11d_collect_must_record_the_carp_of_any_script_input() {
+/// RING của một script lạ bất kỳ đi qua `Collect` cũng phải vào sổ.
+test r11d_collect_must_record_the_ring_of_any_script_input() {
   !run(empty_ledger(), Collect { amount: 100 }, foreign_sweep(100))
 }
 
@@ -2068,7 +2068,7 @@ test r11d_collect_passes_when_any_script_input_is_recorded() {
   run(empty_ledger(), Collect { amount: 150 }, foreign_sweep(150))
 }
 
-/// Đầu vào VÍ không bị đếm: người nộp mang 100 CARP từ ví, chỉ nộp 30, giữ 70 tiền thối.
+/// Đầu vào VÍ không bị đếm: người nộp mang 100 RING từ ví, chỉ nộp 30, giữ 70 tiền thối.
 test r11d_wallet_inputs_are_not_counted() {
   run(
     empty_ledger(),
@@ -2080,7 +2080,7 @@ test r11d_wallet_inputs_are_not_counted() {
           ref_at(1),
           wallet_output(
             from_verification_key(stranger_key),
-            value_with_carp(2_000_000, 100),
+            value_with_ring(2_000_000, 100),
           ),
         ),
       ],
@@ -2090,7 +2090,7 @@ test r11d_wallet_inputs_are_not_counted() {
           30,
           VaultDatum { collected: 30, skimmed: 0, operator_key },
         ),
-        stranger_with(value_with_carp(2_000_000, 70)),
+        stranger_with(value_with_ring(2_000_000, 70)),
       ],
       [],
       None,
@@ -2116,7 +2116,7 @@ fn with_key(d: VaultDatum, key: ByteArray) -> VaultDatum {
   VaultDatum { ..d, operator_key: key }
 }
 
-/// Tiêu ô sổ `rotating_ledger` (2 ADA + 900 CARP) bằng `Rotate`, với một ô đi ra và một bộ
+/// Tiêu ô sổ `rotating_ledger` (2 ADA + 900 RING) bằng `Rotate`, với một ô đi ra và một bộ
 /// chữ ký tuỳ bài.
 fn rotate_with(output: Output, signatories: List<ByteArray>) -> Bool {
   run(
@@ -2168,16 +2168,16 @@ test rotate_needs_the_new_key_signature() {
   )
 }
 
-/// Rút CARP ra trong lúc xoay khoá.
-test rotate_cannot_take_carp() {
+/// Rút RING ra trong lúc xoay khoá.
+test rotate_cannot_take_ring() {
   !rotate_with(
     vault_utxo(2_000_000, 899, with_key(rotating_ledger(), rotated_key)),
     both_keys(),
   )
 }
 
-/// Nạp CARP vào trong lúc xoay khoá: nạp không ghi sổ, phần đó không sinh nghĩa vụ.
-test rotate_cannot_add_carp() {
+/// Nạp RING vào trong lúc xoay khoá: nạp không ghi sổ, phần đó không sinh nghĩa vụ.
+test rotate_cannot_add_ring() {
   !rotate_with(
     vault_utxo(2_000_000, 901, with_key(rotating_ledger(), rotated_key)),
     both_keys(),
@@ -2198,7 +2198,7 @@ test rotate_cannot_add_a_foreign_token() {
     script_output(
       vault_hash,
       add(
-        with_vault_nft(value_with_carp(2_000_000, 900)),
+        with_vault_nft(value_with_ring(2_000_000, 900)),
         stranger_key,
         "junk",
         1,
@@ -2214,7 +2214,7 @@ test rotate_cannot_drop_the_nft() {
   !rotate_with(
     script_output(
       vault_hash,
-      value_with_carp(2_000_000, 900),
+      value_with_ring(2_000_000, 900),
       inline(with_key(rotating_ledger(), rotated_key)),
     ),
     both_keys(),
@@ -2253,8 +2253,8 @@ test rotate_cannot_rehome_the_vault() {
   )
 }
 
-/// Ô lạc có CARP đi kèm `Rotate`: CARP chưa vào sổ chỉ có lối ra là `Collect`.
-test rotate_rejects_stray_carp() {
+/// Ô lạc có RING đi kèm `Rotate`: RING chưa vào sổ chỉ có lối ra là `Collect`.
+test rotate_rejects_stray_ring() {
   !run(
     rotating_ledger(),
     Rotate,
@@ -2456,7 +2456,7 @@ test operate_cannot_change_the_operator_key() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token ngoài ADA và CARP trong ô sổ (ghi chú 10). `Collect` và `Skim` không đòi chữ ký,
+// Token ngoài ADA và RING trong ô sổ (ghi chú 10). `Collect` và `Skim` không đòi chữ ký,
 // nên mỗi bài âm dưới đây có một người lạ dựng giao dịch; bài dương cùng khung giữ token
 // lạ trong ô sổ để thấy chỉ phép giữ nguyên token mới chặn.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2467,20 +2467,20 @@ const foreign_policy: ByteArray =
 /// Ô sổ kèm `q` token lạ.
 fn vault_utxo_with_foreign(
   lovelace: Int,
-  carp: Int,
+  ring: Int,
   q: Int,
   d: VaultDatum,
 ) -> Output {
-  let o = vault_utxo(lovelace, carp, d)
+  let o = vault_utxo(lovelace, ring, d)
   Output { ..o, value: add(o.value, foreign_policy, "JUNK", q) }
 }
 
-/// Ví người lạ nộp `carp` CARP cho `Collect`.
-fn stranger_pays_carp(carp: Int) -> Input {
-  input_from(ref_at(7), stranger_with(value_with_carp(5_000_000, carp)))
+/// Ví người lạ nộp `ring` RING cho `Collect`.
+fn stranger_pays_ring(ring: Int) -> Input {
+  input_from(ref_at(7), stranger_with(value_with_ring(5_000_000, ring)))
 }
 
-fn collect_one_carp(vault_out: Output, extra: List<Output>) -> Bool {
+fn collect_one_ring(vault_out: Output, extra: List<Output>) -> Bool {
   let before = VaultDatum { collected: 0, skimmed: 0, operator_key }
   run(
     before,
@@ -2491,7 +2491,7 @@ fn collect_one_carp(vault_out: Output, extra: List<Output>) -> Bool {
           ref_at(0),
           vault_utxo_with_foreign(2_000_000, 0, 1_000, before),
         ),
-        stranger_pays_carp(1),
+        stranger_pays_ring(1),
       ],
       [vault_out, ..extra],
       [],
@@ -2521,7 +2521,7 @@ fn skim_hundred(vault_out: Output, extra: List<Output>) -> Bool {
 
 /// CỰC DƯƠNG. `Collect` giữ nguyên 1000 token lạ trong ô sổ.
 test collect_keeps_foreign_tokens_in_the_vault() {
-  collect_one_carp(
+  collect_one_ring(
     vault_utxo_with_foreign(
       2_000_000,
       1,
@@ -2532,9 +2532,9 @@ test collect_keeps_foreign_tokens_in_the_vault() {
   )
 }
 
-/// Người lạ nộp 1 CARP qua `Collect` và mang 1000 token lạ ra ví mình.
+/// Người lạ nộp 1 RING qua `Collect` và mang 1000 token lạ ra ví mình.
 test collect_cannot_strip_foreign_tokens() {
-  !collect_one_carp(
+  !collect_one_ring(
     vault_utxo(
       2_000_000,
       1,
@@ -2550,7 +2550,7 @@ test collect_cannot_strip_foreign_tokens() {
 
 /// Lấy một phần cũng bị bác.
 test collect_cannot_strip_part_of_the_foreign_tokens() {
-  !collect_one_carp(
+  !collect_one_ring(
     vault_utxo_with_foreign(
       2_000_000,
       1,
@@ -2563,7 +2563,7 @@ test collect_cannot_strip_part_of_the_foreign_tokens() {
 
 /// Đính thêm token lạ vào ô sổ qua `Collect`.
 test collect_cannot_add_foreign_tokens() {
-  !collect_one_carp(
+  !collect_one_ring(
     vault_utxo_with_foreign(
       2_000_000,
       1,
@@ -2587,7 +2587,7 @@ test skim_keeps_foreign_tokens_in_the_vault() {
   )
 }
 
-/// `Skim` không cần nộp CARP nào mà vẫn mang được token lạ ra.
+/// `Skim` không cần nộp RING nào mà vẫn mang được token lạ ra.
 test skim_cannot_strip_foreign_tokens() {
   !skim_hundred(
     vault_utxo(
@@ -2603,7 +2603,7 @@ test skim_cannot_strip_foreign_tokens() {
   )
 }
 
-/// `Operate` có chữ ký người vận hành nhưng chỉ được rút CARP, không rút token lạ.
+/// `Operate` có chữ ký người vận hành nhưng chỉ được rút RING, không rút token lạ.
 test operate_cannot_strip_foreign_tokens() {
   let state = rotating_ledger()
   !run(
@@ -2620,7 +2620,7 @@ test operate_cannot_strip_foreign_tokens() {
         vault_utxo(2_000_000, 100, state),
         wallet_output(
           from_verification_key(operator_key),
-          value_with_carp(2_000_000, 800) |> add(foreign_policy, "JUNK", 1_000),
+          value_with_ring(2_000_000, 800) |> add(foreign_policy, "JUNK", 1_000),
         ),
       ],
       [operator_key],
@@ -2674,7 +2674,7 @@ test skim_cannot_add_foreign_tokens() {
 }
 
 /// Cùng khung với `operate_keeps_foreign_tokens_in_the_vault`, khác đúng một token lạ mới
-/// đính vào ô sổ đi ra. Chữ ký người vận hành không mở quyền đổi phần ngoài ADA và CARP.
+/// đính vào ô sổ đi ra. Chữ ký người vận hành không mở quyền đổi phần ngoài ADA và RING.
 test operate_cannot_add_foreign_tokens() {
   let state = rotating_ledger()
   !run(
@@ -2699,7 +2699,7 @@ test operate_cannot_add_foreign_tokens() {
   )
 }
 
-/// Mở kho kèm token lạ. Các nhánh tiêu chỉ ép giữ nguyên phần ngoài ADA và CARP, nên token
+/// Mở kho kèm token lạ. Các nhánh tiêu chỉ ép giữ nguyên phần ngoài ADA và RING, nên token
 /// nhét vào lúc mở sẽ nằm lì trong ô sổ; chỉ chốt ở `Open` chặn được. Cùng khung với
 /// `open_mints_exactly_one_nft_to_the_enterprise_vault_address_with_an_empty_ledger`.
 test open_rejects_a_foreign_token_in_the_opening_output() {

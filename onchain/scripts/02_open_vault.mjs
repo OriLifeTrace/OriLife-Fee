@@ -11,36 +11,51 @@ import {
 } from "./common.mjs";
 import { VaultDatum, VaultMint } from "./schemas.mjs";
 
-// Đồng CARP của instance sắp mở. Mặc định là đồng ghi ở gốc tệp trạng thái (`01` ghi tCARP
-// thử). Mở kho cho một đồng CARP có sẵn trên chuỗi thì đặt `ORILIFE_FEE_CARP_POLICY` +
-// `ORILIFE_FEE_CARP_NAME` (tên tài sản dạng hex), tuỳ chọn `ORILIFE_FEE_CARP_MINT_TX` (tx đúc
-// đầu, chỉ để ghi nhật ký). Đồng CARP là tham số của cả ba hợp đồng, nên nó được chốt TRƯỚC khi
+// Đồng RING của instance sắp mở. Mặc định là đồng ghi ở gốc tệp trạng thái (`01` ghi tRING
+// thử). Mở kho cho một đồng RING có sẵn trên chuỗi thì đặt `ORILIFE_FEE_RING_POLICY` +
+// `ORILIFE_FEE_RING_NAME` (tên tài sản dạng hex), tuỳ chọn `ORILIFE_FEE_RING_MINT_TX` (tx đúc
+// đầu, chỉ để ghi nhật ký). Đồng RING là tham số của cả ba hợp đồng, nên nó được chốt TRƯỚC khi
 // chọn seed và dựng hợp đồng, và không đổi được trên một instance đang mở.
-const envCarp = process.env.ORILIFE_FEE_CARP_POLICY
+//
+// Tên cũ `ORILIFE_FEE_CARP_*` (trước đợt đổi tên CARP → RING, 2026-11-13) vẫn được đọc kèm một
+// dòng cảnh báo; đặt cả hai tên mà khác giá trị thì dừng, không chọn hộ.
+function ringEnv(suffix) {
+  const current = process.env[`ORILIFE_FEE_RING_${suffix}`];
+  const legacy = process.env[`ORILIFE_FEE_CARP_${suffix}`];
+  if (legacy === undefined) return current;
+  if (current !== undefined && current !== legacy) {
+    throw new Error(`ORILIFE_FEE_RING_${suffix} và ORILIFE_FEE_CARP_${suffix} khác giá trị — bỏ tên cũ`);
+  }
+  console.warn(`cảnh báo: ORILIFE_FEE_CARP_${suffix} là tên cũ, đổi sang ORILIFE_FEE_RING_${suffix}`);
+  return legacy;
+}
+const envRingPolicy = ringEnv("POLICY");
+const envRingName = ringEnv("NAME") ?? "";
+const envRing = envRingPolicy
   ? {
-      carpPolicy: process.env.ORILIFE_FEE_CARP_POLICY,
-      carpName: process.env.ORILIFE_FEE_CARP_NAME ?? "",
-      carpUnit: process.env.ORILIFE_FEE_CARP_POLICY + (process.env.ORILIFE_FEE_CARP_NAME ?? ""),
-      mintTx: process.env.ORILIFE_FEE_CARP_MINT_TX,
+      ringPolicy: envRingPolicy,
+      ringName: envRingName,
+      ringUnit: envRingPolicy + envRingName,
+      mintTx: ringEnv("MINT_TX"),
     }
   : null;
 
 const current = state();
-if (!current.carpPolicy && !envCarp) {
-  throw new Error("chưa có đồng CARP: chạy 01_mint_test_carp.mjs hoặc đặt ORILIFE_FEE_CARP_POLICY");
+if (!current.ringPolicy && !envRing) {
+  throw new Error("chưa có đồng RING: chạy 01_mint_test_ring.mjs hoặc đặt ORILIFE_FEE_RING_POLICY");
 }
 if (current.openTx && current.vaultNftUnit && !current.closeTx) {
-  if (envCarp && envCarp.carpUnit !== current.carpUnit) {
-    throw new Error("kho đang mở dùng đồng CARP khác — đóng kho cũ (06) trước khi mở cho đồng mới");
+  if (envRing && envRing.ringUnit !== current.ringUnit) {
+    throw new Error("kho đang mở dùng đồng RING khác — đóng kho cũ (06) trước khi mở cho đồng mới");
   }
   console.log("kho đã mở, bỏ qua");
   process.exit(0);
 }
-// Gốc tệp đang mang một instance đã mở: đã đóng thì dời vào `closed` (kèm đồng CARP nó dùng),
+// Gốc tệp đang mang một instance đã mở: đã đóng thì dời vào `closed` (kèm đồng RING nó dùng),
 // chưa đóng thì `archiveClosedInstance` dừng. Chỉ có `seed` (lần trước chọn seed rồi hỏng ở
-// bước gửi) thì giữ nguyên để dùng lại đúng seed đó — seed không phụ thuộc đồng CARP.
+// bước gửi) thì giữ nguyên để dùng lại đúng seed đó — seed không phụ thuộc đồng RING.
 if (current.openTx) archiveClosedInstance();
-const s = envCarp ? saveState(envCarp) : state();
+const s = envRing ? saveState(envRing) : state();
 
 const lucid = await connect();
 
@@ -59,7 +74,7 @@ if (!seedUtxo) {
   saveState({ seed });
 }
 
-const scripts = buildScripts({ carpPolicy: s.carpPolicy, carpName: s.carpName, seed });
+const scripts = buildScripts({ ringPolicy: s.ringPolicy, ringName: s.ringName, seed });
 
 console.log("kho tạm  ", scripts.escrowAddress);
 console.log("kho phí  ", scripts.vaultAddress);

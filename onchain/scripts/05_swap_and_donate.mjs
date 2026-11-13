@@ -1,4 +1,4 @@
-// Đổi CARP lấy ADA rồi nộp kho bạc Cardano, TRONG CÙNG MỘT GIAO DỊCH.
+// Đổi RING lấy ADA rồi nộp kho bạc Cardano, TRONG CÙNG MỘT GIAO DỊCH.
 //
 // Đây là mắt xích chịu lực của cả cơ chế. Hợp đồng kho tạm chỉ mở khoá khi thân giao
 // dịch có trường `treasury_donation` đủ sàn — nên bước này không phải một thói quen vận
@@ -12,8 +12,8 @@
 //   để nút mạng tự kiểm lại — nút chỉ từ chối khi chi phí thật VƯỢT mức khai, còn khai
 //   dư thì chỉ tốn thêm phí.
 //
-// "Sàn giao dịch" ở bản thử này là một địa chỉ ví thứ hai đóng vai bên mua CARP. Hợp
-// đồng không quan tâm CARP đi đâu — nó chỉ ràng buộc kho bạc phải nhận đủ. Ranh giới đó
+// "Sàn giao dịch" ở bản thử này là một địa chỉ ví thứ hai đóng vai bên mua RING. Hợp
+// đồng không quan tâm RING đi đâu — nó chỉ ràng buộc kho bạc phải nhận đủ. Ranh giới đó
 // là cố ý: buộc một sàn cụ thể vào mã là buộc luôn cả rủi ro của sàn đó.
 
 import * as CML from "@anastasia-labs/cardano-multiplatform-lib-nodejs";
@@ -23,7 +23,7 @@ import {
 import { Data } from "@lucid-evolution/lucid";
 import {
   connect, state, saveState, buildScripts, explorer, awaitTx, requiredDonation,
-  NETWORK, CARP_SCALE,
+  NETWORK, RING_SCALE,
 } from "./common.mjs";
 import { EscrowDatum } from "./schemas.mjs";
 
@@ -37,32 +37,32 @@ const s = state();
 const lucid = await connect();
 const walletAddress = await lucid.wallet().address();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed,
+  ringPolicy: s.ringPolicy, ringName: s.ringName, seed: s.seed,
 });
 
 // Ai cũng `Skim` được, nên địa chỉ kho tạm có thể giữ nhiều lô cùng lúc. Đòi "đúng 1 ô" thì
 // một lần trích 1 đơn vị của người ngoài là dừng cả tuyến. Chọn lô của ĐÚNG instance kho phí
-// này, NHIỀU CARP nhất, hoà thì mở phiên sớm nhất; ô không đọc được datum thì bỏ qua. Không xếp
+// này, NHIỀU RING nhất, hoà thì mở phiên sớm nhất; ô không đọc được datum thì bỏ qua. Không xếp
 // theo `listed_at` trước: ai cũng gửi được một lô giả mang băm kho thật với `listed_at = 0` và
-// 1 đơn vị CARP, và lô đó sẽ luôn đứng đầu, mỗi lượt `05` tốn trọn phí cho 1 đơn vị.
+// 1 đơn vị RING, và lô đó sẽ luôn đứng đầu, mỗi lượt `05` tốn trọn phí cho 1 đơn vị.
 const atEscrow = await lucid.utxosAt(scripts.escrowAddress);
 const lots = atEscrow.flatMap((u) => {
   try {
     const d = Data.from(u.datum, EscrowDatum);
-    const held = u.assets[scripts.carpUnit] ?? 0n;
-    return d.vault === scripts.vaultHash && d.carp === held && held > 0n ? [{ u, d }] : [];
+    const held = u.assets[scripts.ringUnit] ?? 0n;
+    return d.vault === scripts.vaultHash && d.ring === held && held > 0n ? [{ u, d }] : [];
   } catch {
     return [];
   }
 });
 if (lots.length === 0) throw new Error("kho tạm không có lô nào của instance kho phí này");
 const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
-lots.sort((a, b) => cmp(b.d.carp, a.d.carp) || cmp(a.d.listed_at, b.d.listed_at));
+lots.sort((a, b) => cmp(b.d.ring, a.d.ring) || cmp(a.d.listed_at, b.d.listed_at));
 const { u: escrow, d: escrowDatum } = lots[0];
-console.log("số lô       ", lots.length, "— chọn lô nhiều CARP nhất;",
+console.log("số lô       ", lots.length, "— chọn lô nhiều RING nhất;",
   atEscrow.length - lots.length, "ô khác ở địa chỉ kho tạm bị bỏ qua");
-const held = escrow.assets[scripts.carpUnit] ?? 0n;
-if (escrowDatum.carp !== held) throw new Error(`sổ kho tạm khai ${escrowDatum.carp} nhưng giữ ${held}`);
+const held = escrow.assets[scripts.ringUnit] ?? 0n;
+if (escrowDatum.ring !== held) throw new Error(`sổ kho tạm khai ${escrowDatum.ring} nhưng giữ ${held}`);
 
 // Giá đấu giảm dần tính tại CẬN DƯỚI khoảng hiệu lực (`donation_escrow.ak`). Cận dưới là
 // một slot; hợp đồng thấy thời điểm của slot đó, nên tính giá đúng tại thời điểm ấy chứ
@@ -71,11 +71,11 @@ if (escrowDatum.carp !== held) throw new Error(`sổ kho tạm khai ${escrowDatu
 const startSlot = unixTimeToSlot(NETWORK, Date.now() - 60_000);
 const priceAt = slotToUnixTime(NETWORK, startSlot);
 
-// Nộp hết một lượt: toàn bộ CARP rời kho tạm.
-const releasedCarp = held;
-const requiredLovelace = requiredDonation(releasedCarp, escrowDatum.listed_at, priceAt);
+// Nộp hết một lượt: toàn bộ RING rời kho tạm.
+const releasedRing = held;
+const requiredLovelace = requiredDonation(releasedRing, escrowDatum.listed_at, priceAt);
 
-console.log("kho tạm giữ ", releasedCarp, "=", Number(releasedCarp / CARP_SCALE), "tCARP");
+console.log("kho tạm giữ ", releasedRing, "=", Number(releasedRing / RING_SCALE), "tRING");
 console.log("mở phiên    ", new Date(Number(escrowDatum.listed_at)).toISOString());
 console.log("tính giá lúc", new Date(priceAt).toISOString());
 console.log("phải nộp    ", requiredLovelace, "lovelace vào kho bạc Cardano");
@@ -130,12 +130,12 @@ txb.set_exunits(
 );
 const buyer = CML.Address.from_bech32(walletAddress);
 
-// Bên mua CARP nhận toàn bộ CARP.
+// Bên mua RING nhận toàn bộ RING.
 txb.add_output(
   CML.TransactionOutputBuilder.new()
     .with_address(buyer)
     .next()
-    .with_value(assetsToValue({ lovelace: 2_000_000n, [scripts.carpUnit]: releasedCarp }))
+    .with_value(assetsToValue({ lovelace: 2_000_000n, [scripts.ringUnit]: releasedRing }))
     .build(),
 );
 

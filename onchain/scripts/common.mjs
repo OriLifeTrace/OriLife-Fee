@@ -36,13 +36,13 @@ function requireEnv(name) {
 /// 10% dòng vào là nghĩa vụ nộp lại kho bạc Cardano.
 export const SKIM_BPS = 1_000;
 
-/// Sàn tỉ giá: mỗi 1 CARP rời kho tạm phải kéo theo tối thiểu ngần này lovelace vào
+/// Sàn tỉ giá: mỗi 1 RING rời kho tạm phải kéo theo tối thiểu ngần này lovelace vào
 /// kho bạc. Đây là con số quản trị chặn đáy, không phải giá thị trường.
-export const MIN_LOVELACE_PER_CARP = 10_000;
+export const MIN_LOVELACE_PER_RING = 10_000;
 
-/// Giá mở phiên đấu giá giảm dần (10× sàn). Giá mỗi CARP đi thẳng từ đây xuống sàn trong
+/// Giá mở phiên đấu giá giảm dần (10× sàn). Giá mỗi RING đi thẳng từ đây xuống sàn trong
 /// `DECAY_MS`; người gọi `Donate` sớm trả gần giá mở, nên không còn quyền chọn miễn phí ở sàn.
-export const START_LOVELACE_PER_CARP = 100_000;
+export const START_LOVELACE_PER_RING = 100_000;
 
 /// Độ dài phiên đấu giá: 7 ngày.
 export const DECAY_MS = 604_800_000;
@@ -59,10 +59,10 @@ export const LOT_MIN = 10_000_000_000n;
 /// Tên NFT định danh sổ kho phí. Phải khớp `types.ak` ▸ `vault_nft_name`.
 export const VAULT_NFT_NAME = "orilife-fee-vault";
 
-/// Một CARP nguyên = 10⁹ đơn vị nhỏ nhất (`nanothread`).
-export const CARP_SCALE = 1_000_000_000n;
+/// Một RING nguyên = 10⁹ đơn vị nhỏ nhất (`nanoring`).
+export const RING_SCALE = 1_000_000_000n;
 
-export const TEST_CARP_NAME = "tCARP";
+export const TEST_RING_NAME = "tRING";
 
 export function blueprint() {
   const path = join(ROOT, "orilife_treasury", "plutus.json");
@@ -102,20 +102,20 @@ export function saveState(patch) {
   return next;
 }
 
-/// Trường dùng chung cho mọi instance (ví, đồng CARP thử) — mọi trường khác ở gốc tệp
+/// Trường dùng chung cho mọi instance (ví, đồng RING thử) — mọi trường khác ở gốc tệp
 /// trạng thái thuộc về instance kho đang mở.
 const SHARED_KEYS = new Set([
-  "network", "wallet", "operatorKeyHash", "carpPolicy", "carpName", "carpUnit", "mintTx",
+  "network", "wallet", "operatorKeyHash", "ringPolicy", "ringName", "ringUnit", "mintTx",
   "previous", "closed", "strayOpen",
 ]);
 
-/// Trường đồng CARP chụp kèm mỗi instance khi dời vào `closed`: CARP đổi được giữa hai
-/// instance (`02` nhận CARP qua biến môi trường), nên bản lưu phải tự mang đồng nó đã dùng.
-const CARP_KEYS = ["carpPolicy", "carpName", "carpUnit", "mintTx"];
+/// Trường đồng RING chụp kèm mỗi instance khi dời vào `closed`: RING đổi được giữa hai
+/// instance (`02` nhận RING qua biến môi trường), nên bản lưu phải tự mang đồng nó đã dùng.
+const RING_KEYS = ["ringPolicy", "ringName", "ringUnit", "mintTx"];
 
 /// Tệp trạng thái là NHẬT KÝ những gì đã chạy trên Preprod, không chỉ là con trỏ tới
 /// instance hiện tại. Trước khi mở instance mới: instance ở gốc tệp đã đóng thì dời
-/// nguyên trạng vào `closed` (giữ thứ tự, kèm đồng CARP nó dùng); chưa đóng thì dừng — mở
+/// nguyên trạng vào `closed` (giữ thứ tự, kèm đồng RING nó dùng); chưa đóng thì dừng — mở
 /// kho mới khi kho cũ còn tài sản là bỏ lại tài sản đó.
 export function archiveClosedInstance() {
   const s = state();
@@ -125,7 +125,7 @@ export function archiveClosedInstance() {
     throw new Error("instance ở gốc tệp trạng thái chưa đóng — chạy 06_close_vault.mjs trước");
   }
   const archived = Object.fromEntries(
-    [...CARP_KEYS.filter((k) => k in s), ...own].map((k) => [k, s[k]]),
+    [...RING_KEYS.filter((k) => k in s), ...own].map((k) => [k, s[k]]),
   );
   const next = Object.fromEntries(Object.entries(s).filter(([k]) => SHARED_KEYS.has(k)));
   next.closed = [...(s.closed ?? []), archived];
@@ -143,26 +143,26 @@ export function archiveClosedInstance() {
 /// Khoá vận hành KHÔNG còn là tham số kho: nó nằm trong datum ô sổ (`schemas.mjs` ▸
 /// `VaultDatum.operator_key`), nên xoay khoá không đổi băm kho, NFT sổ hay địa chỉ hộp thư.
 ///
-/// `carpName` là tên tài sản dạng HEX (đúng bytes trên chuỗi), không phải chữ: tên CARP thật
+/// `ringName` là tên tài sản dạng HEX (đúng bytes trên chuỗi), không phải chữ: tên RING thật
 /// là 28 byte không đọc được thành chữ, nên mã hoá chữ→hex ở đây sẽ ra một đồng khác mà không
-/// ai báo. Tệp trạng thái cũ còn ghi `"tCARP"` dạng chữ thì dừng ở đây, không đoán.
-export function buildScripts({ carpPolicy, carpName, seed }) {
+/// ai báo. Tệp trạng thái cũ còn ghi `"tCARP"` (tên đồng thử trước đợt đổi tên CARP → RING) dạng chữ thì dừng ở đây, không đoán.
+export function buildScripts({ ringPolicy, ringName, seed }) {
   if (!seed) throw new Error("thiếu `seed` — chạy 02_open_vault.mjs để chọn và ghi seed trước");
-  if (!/^[0-9a-f]{56}$/.test(carpPolicy ?? "")) {
-    throw new Error(`carpPolicy phải là 56 ký tự hex, đang là '${carpPolicy}'`);
+  if (!/^[0-9a-f]{56}$/.test(ringPolicy ?? "")) {
+    throw new Error(`ringPolicy phải là 56 ký tự hex, đang là '${ringPolicy}'`);
   }
-  if (!/^(?:[0-9a-f]{2}){0,32}$/.test(carpName ?? "-")) {
-    throw new Error(`carpName phải là tên tài sản dạng hex (≤32 byte), đang là '${carpName}'`);
+  if (!/^(?:[0-9a-f]{2}){0,32}$/.test(ringName ?? "-")) {
+    throw new Error(`ringName phải là tên tài sản dạng hex (≤32 byte), đang là '${ringName}'`);
   }
-  const nameHex = carpName;
+  const nameHex = ringName;
 
   const escrowScript = {
     type: "PlutusV3",
     script: applyParamsToScript(compiledCode("donation_escrow.donation_escrow.spend"), [
-      carpPolicy,
+      ringPolicy,
       nameHex,
-      BigInt(MIN_LOVELACE_PER_CARP),
-      BigInt(START_LOVELACE_PER_CARP),
+      BigInt(MIN_LOVELACE_PER_RING),
+      BigInt(START_LOVELACE_PER_RING),
       BigInt(DECAY_MS),
       LOT_MIN,
     ]),
@@ -172,7 +172,7 @@ export function buildScripts({ carpPolicy, carpName, seed }) {
   const vaultScript = {
     type: "PlutusV3",
     script: applyParamsToScript(compiledCode("fee_vault.fee_vault.spend"), [
-      carpPolicy,
+      ringPolicy,
       nameHex,
       BigInt(SKIM_BPS),
       escrowHash,
@@ -185,7 +185,7 @@ export function buildScripts({ carpPolicy, carpName, seed }) {
   const inboxScript = {
     type: "PlutusV3",
     script: applyParamsToScript(compiledCode("fee_inbox.fee_inbox.spend"), [
-      carpPolicy,
+      ringPolicy,
       nameHex,
       vaultHash,
     ]),
@@ -206,7 +206,7 @@ export function buildScripts({ carpPolicy, carpName, seed }) {
     // Cùng script, vai stake credential: lượt gom rút 0 lovelace từ đây để mặt `withdraw`
     // chạy MỘT lần cho cả lô (mẫu withdraw-zero); credential phải được đăng ký một lần.
     inboxRewardAddress: validatorToRewardAddress(NETWORK, inboxScript),
-    carpUnit: carpPolicy + nameHex,
+    ringUnit: ringPolicy + nameHex,
   };
 }
 
@@ -223,27 +223,27 @@ export function splitVaultUtxos(utxos, vaultNftUnit) {
 /// Ô ở địa chỉ permissionless (hộp thư, địa chỉ kho) mà kịch bản được phép nhặt. Ai cũng gửi
 /// được vào những địa chỉ đó, nên nhặt mù là để người ngoài quyết giao dịch của mình có dựng
 /// được không: ô mang băm datum không ai có tiền ảnh bị sổ cái bác ở phase-1, ô mang reference
-/// script lớn đội phí và chạm trần kích thước. Chỉ nhặt ô CÓ CARP, xếp CARP giảm dần, cắt ở
+/// script lớn đội phí và chạm trần kích thước. Chỉ nhặt ô CÓ RING, xếp RING giảm dần, cắt ở
 /// `limit` — ô bị bỏ lại không mất gì, lượt sau vẫn gom được.
-export function sweepable(utxos, carpUnit, limit) {
-  const carpOf = (u) => u.assets[carpUnit] ?? 0n;
-  const ok = utxos.filter((u) => carpOf(u) > 0n && !u.scriptRef && !(u.datumHash && !u.datum));
-  ok.sort((a, b) => (carpOf(b) > carpOf(a) ? 1 : carpOf(b) < carpOf(a) ? -1 : 0));
+export function sweepable(utxos, ringUnit, limit) {
+  const ringOf = (u) => u.assets[ringUnit] ?? 0n;
+  const ok = utxos.filter((u) => ringOf(u) > 0n && !u.scriptRef && !(u.datumHash && !u.datum));
+  ok.sort((a, b) => (ringOf(b) > ringOf(a) ? 1 : ringOf(b) < ringOf(a) ? -1 : 0));
   return { picked: ok.slice(0, limit), skipped: utxos.length - Math.min(ok.length, limit) };
 }
 
-/// Khoản nộp kho bạc tối thiểu cho `released` đơn vị CARP rời kho tạm tại thời điểm `t`
+/// Khoản nộp kho bạc tối thiểu cho `released` đơn vị RING rời kho tạm tại thời điểm `t`
 /// (POSIX ms, = cận dưới khoảng hiệu lực của giao dịch `Donate`). Chép từ
 /// `donation_escrow.ak` — công thức đấu giá giảm dần, MỘT lần làm tròn lên; lệch với bản
 /// trên chuỗi thì nút mạng từ chối giao dịch, không có gì mất.
 export function requiredDonation(released, listedAt, t) {
-  const floor = BigInt(MIN_LOVELACE_PER_CARP);
-  const start = BigInt(START_LOVELACE_PER_CARP);
+  const floor = BigInt(MIN_LOVELACE_PER_RING);
+  const start = BigInt(START_LOVELACE_PER_RING);
   const decay = BigInt(DECAY_MS);
   const elapsed = BigInt(t) - BigInt(listedAt);
   const remaining = elapsed <= 0n ? decay : elapsed >= decay ? 0n : decay - elapsed;
   const numerator = released * (floor * decay + (start - floor) * remaining);
-  const denominator = CARP_SCALE * decay;
+  const denominator = RING_SCALE * decay;
   return (numerator + denominator - 1n) / denominator;
 }
 

@@ -1,6 +1,6 @@
 //// Kiểu dữ liệu dùng chung cho kho phí OriLife.
 ////
-//// Đơn vị CARP ở đây luôn là đơn vị nhỏ nhất trên chuỗi (`nanothread`, tức CARP × 10⁹).
+//// Đơn vị RING ở đây luôn là đơn vị nhỏ nhất trên chuỗi (`nanoring`, tức RING × 10⁹).
 //// Không có số thực nào trong hợp đồng: mọi phép chia đều là chia nguyên, và chỗ nào
 //// làm tròn thì làm tròn LÊN về phía nghĩa vụ, không về phía người giữ tiền.
 
@@ -21,16 +21,16 @@ pub const vault_nft_name: AssetName = "orilife-fee-vault"
 /// `collected` chỉ tăng, `skimmed` chỉ tăng, và `skimmed` không bao giờ vượt phần
 /// nghĩa vụ tính trên `collected`. Ba câu đó là toàn bộ cơ chế bảo đảm lời hứa 10%.
 pub type VaultDatum {
-  /// Tổng CARP đã từng chảy vào kho, cộng dồn từ đầu. KHÔNG phải số dư hiện tại.
+  /// Tổng RING đã từng chảy vào kho, cộng dồn từ đầu. KHÔNG phải số dư hiện tại.
   collected: Int,
-  /// Tổng CARP đã chuyển sang kho tạm chờ đổi ADA. Cũng cộng dồn.
+  /// Tổng RING đã chuyển sang kho tạm chờ đổi ADA. Cũng cộng dồn.
   skimmed: Int,
   /// Băm khoá vận hành OriLife (verification key hash). Cần cho `Operate`, `Rotate`,
   /// `Close`; nộp phí và trích nghĩa vụ thì ai cũng gọi được.
   ///
   /// Vì sao nằm trong datum chứ không là tham số biên dịch: tham số thì đổi khoá là đổi băm
   /// kho, tức phải `Close` instance cũ — mà `Close` đốt NFT sổ, và `fee_inbox` bake băm kho
-  /// đó: mọi ô CARP còn trong hộp thư mất đường vào sổ vĩnh viễn. Trong datum thì `Rotate`
+  /// đó: mọi ô RING còn trong hộp thư mất đường vào sổ vĩnh viễn. Trong datum thì `Rotate`
   /// đổi khoá tại chỗ, băm kho và NFT giữ nguyên, hộp thư vẫn gom được.
   operator_key: ByteArray,
 }
@@ -50,7 +50,7 @@ pub type VaultRedeemer {
   /// ép `lovelace_of(ra) >= lovelace_of(vào)`, tức ADA chỉ có đường vào).
   ///
   /// `Close` là TẮT VĨNH VIỄN, không phải đường xoay khoá (xoay khoá là `Rotate`). NFT sổ
-  /// bị đốt, nên mọi ô CARP còn ở hộp thư (`fee_inbox`) trỏ về kho này không còn đường vào
+  /// bị đốt, nên mọi ô RING còn ở hộp thư (`fee_inbox`) trỏ về kho này không còn đường vào
   /// sổ. Hợp đồng không chặn được việc đó: ô hộp thư không nằm trong giao dịch đóng kho, và
   /// validator không thấy UTxO ngoài giao dịch. Trước khi đóng phải gom hết hộp thư.
   Close
@@ -74,15 +74,15 @@ pub type VaultMint {
 /// Kho tạm giữ phần đã trích. Tiền ở đây chỉ có một lối ra: một giao dịch có nộp
 /// kho bạc Cardano.
 pub type EscrowDatum {
-  /// Số CARP mà UTxO này đang giữ. Khai tường minh để người đọc không phải suy từ
+  /// Số RING mà UTxO này đang giữ. Khai tường minh để người đọc không phải suy từ
   /// giá trị kèm theo, và để hợp đồng bắt được trường hợp khai lệch.
-  carp: Int,
+  ring: Int,
   /// Băm hợp đồng kho phí đã trích khoản này ra.
   ///
   /// Vì sao cần: `list.length(own_inputs) == 1` bên kho phí chỉ đếm input CÙNG băm
   /// script. Hai instance kho phí khác tham số có băm khác nhau, nên mỗi cái tự thấy
   /// mình là input duy nhất, và MỘT output ở kho tạm thoả điều kiện cho CẢ HAI — hai
-  /// lần `skimmed` tăng mà chỉ một lần CARP rời kho. Ràng khoản trích vào đúng một băm
+  /// lần `skimmed` tăng mà chỉ một lần RING rời kho. Ràng khoản trích vào đúng một băm
   /// kho phí là chỗ chặn việc đó.
   vault: ByteArray,
   /// Ô đầu vào mà UTxO này là phần dư của. `None` nghĩa là khoản vừa được trích sang,
@@ -98,14 +98,14 @@ pub type EscrowDatum {
   /// trần, sau đó hạ tuyến tính về sàn trong `decay_ms`.
   ///
   /// Vì sao cần: trả đúng sàn ở mọi thời điểm là trao cho người gọi `Donate` một quyền
-  /// chọn miễn phí — họ lấy CARP theo sàn và bỏ túi chênh lệch tới giá thị trường. Kho
+  /// chọn miễn phí — họ lấy RING theo sàn và bỏ túi chênh lệch tới giá thị trường. Kho
   /// phí ép mốc này bằng cận trên khoảng hiệu lực của giao dịch `Skim` (không lùi ngày
   /// được để mua rẻ ngay), và phần dư giữ nguyên mốc của ô gốc (không đặt lại được).
   listed_at: Int,
 }
 
 pub type EscrowRedeemer {
-  /// Đổi CARP lấy ADA rồi nộp kho bạc. Ai cũng gọi được — cố ý: nếu OriLife biến mất
+  /// Đổi RING lấy ADA rồi nộp kho bạc. Ai cũng gọi được — cố ý: nếu OriLife biến mất
   /// thì lời hứa vẫn thực thi được bởi người ngoài.
   Donate
 }

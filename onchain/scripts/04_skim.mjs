@@ -8,14 +8,14 @@
 import { Data } from "@lucid-evolution/lucid";
 import {
   connect, state, saveState, buildScripts, splitVaultUtxos, explorer, awaitTx,
-  SKIM_BPS, CARP_SCALE, LISTING_WINDOW_MS,
+  SKIM_BPS, RING_SCALE, LISTING_WINDOW_MS,
 } from "./common.mjs";
 import { VaultDatum, EscrowDatum, VaultRedeemer } from "./schemas.mjs";
 
 const s = state();
 const lucid = await connect();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed,
+  ringPolicy: s.ringPolicy, ringName: s.ringName, seed: s.seed,
 });
 
 const { ledger: vault } = splitVaultUtxos(
@@ -32,7 +32,7 @@ if (obligation <= 0n) { console.log("không còn nghĩa vụ nào để trích")
 
 // `...before` chở `collected` và `operator_key` sang nguyên vẹn.
 const after = { ...before, skimmed: before.skimmed + obligation };
-const held = vault.assets[scripts.carpUnit] ?? 0n;
+const held = vault.assets[scripts.ringUnit] ?? 0n;
 
 // Khoảng hiệu lực tròn giây: Preprod một slot = 1 giây, nên mốc tròn giây đi lên chuỗi rồi
 // quay về hợp đồng đúng nguyên giá trị — `listed_at == cận trên` so được bằng dấu bằng.
@@ -42,7 +42,7 @@ const upper = lower + 15 * 60_000;
 if (upper - lower > LISTING_WINDOW_MS) throw new Error("khoảng hiệu lực rộng hơn cửa sổ mở phiên");
 
 console.log("sổ trước ", before.collected, "/", before.skimmed);
-console.log("nghĩa vụ ", obligation, "=", Number(obligation / CARP_SCALE), "tCARP");
+console.log("nghĩa vụ ", obligation, "=", Number(obligation / RING_SCALE), "tRING");
 console.log("sổ sau   ", after.collected, "/", after.skimmed);
 console.log("mở phiên ", new Date(upper).toISOString());
 
@@ -58,7 +58,7 @@ const tx = await lucid
     {
       lovelace: vault.assets.lovelace,
       [scripts.vaultNftUnit]: 1n,
-      [scripts.carpUnit]: held - obligation,
+      [scripts.ringUnit]: held - obligation,
     },
   )
   .pay.ToContract(
@@ -69,11 +69,11 @@ const tx = await lucid
       // khai nó là khoản MỚI, không phải phần dư của một ô kho tạm nào; `listed_at` là mốc
       // mở phiên đấu giá. Sai một trong ba thì hợp đồng từ chối — `escrow_receives`.
       value: Data.to(
-        { carp: obligation, vault: scripts.vaultHash, parent: null, listed_at: BigInt(upper) },
+        { ring: obligation, vault: scripts.vaultHash, parent: null, listed_at: BigInt(upper) },
         EscrowDatum,
       ),
     },
-    { lovelace: 3_000_000n, [scripts.carpUnit]: obligation },
+    { lovelace: 3_000_000n, [scripts.ringUnit]: obligation },
   )
   .complete();
 

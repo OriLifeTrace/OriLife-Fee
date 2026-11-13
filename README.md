@@ -1,6 +1,6 @@
 # @orilife/fee
 
-**OriLife services are priced in MAGIC and paid in CARP. Cardano network fees are paid in ADA.** This repository is
+**OriLife services are priced in MAGIC and paid in RING. Cardano network fees are paid in ADA.** This repository is
 the OriLife side of that pricing: it reads the `op_declaration` that OriLife-Core attaches to every
 billable response, quotes it against MAGIC's price beacon, and plans the `ConsumeMAGIC`
 transactions the user has to sign. Building and signing those transactions is not done here: that
@@ -79,13 +79,13 @@ npx vitest run
 
 This is what the CI gate runs (`.github/workflows/ci.yml`, job `core`).
 
-## Fee vault + donation escrow (`onchain/`, CARP, Preprod)
+## Fee vault + donation escrow (`onchain/`, RING, Preprod)
 
 This is a prototype of one specific guarantee: a fixed share of fee inflow must be paid to the
 Cardano treasury, and the contract, not an operating procedure, enforces it. It uses
 `treasury_donation`, a Conway-era transaction body field. The running Preprod instance holds the
-CARP token named at the root of `onchain/scripts/deployed_preprod.json` (`carpPolicy`, `carpName`);
-the closed instances under `closed` used `tCARP`, a single-signature test token. CARP has not been
+RING token named at the root of `onchain/scripts/deployed_preprod.json` (`ringPolicy`, `ringName`);
+the closed instances under `closed` used `tCARP`, a single-signature test token (its on-chain asset name, kept as minted; new test mints are named `tRING`). RING has not been
 issued on Mainnet. The design, the invariants, and the transactions
 already run on Preprod are in [`onchain/README.md`](onchain/README.md). CI checks it with
 `aiken check` (job `onchain`).

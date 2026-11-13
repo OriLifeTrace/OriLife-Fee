@@ -167,24 +167,24 @@ const check = (ok, what) => {
   console.log(`  ✓ ${what}`);
 };
 
-await step("01_mint_test_carp.mjs");
+await step("01_mint_test_ring.mjs");
 await step("02_open_vault.mjs");
 await step("03_collect_fee.mjs");
-check(st().collected === (1_000n * 1_000_000_000n).toString(), "sổ ghi 1 000 tCARP sau lượt gom đầu");
+check(st().collected === (1_000n * 1_000_000_000n).toString(), "sổ ghi 1 000 tRING sau lượt gom đầu");
 
 // Rác ở hai địa chỉ ai cũng gửi được, bơm thẳng vào sổ Emulator (không phải giao dịch thật —
 // thứ được kiểm ở đây là kịch bản NHẶT ô, không phải đường gửi):
-//   · 28 ô hộp thư, mỗi ô 1 tCARP — cùng khoản `03` tự nộp là 29, sát trần 30 của một lượt gom;
-//   · 2 ô lạc CÓ CARP ở địa chỉ kho (7 tCARP mỗi ô) — phải vào sổ;
+//   · 28 ô hộp thư, mỗi ô 1 tRING — cùng khoản `03` tự nộp là 29, sát trần 30 của một lượt gom;
+//   · 2 ô lạc CÓ RING ở địa chỉ kho (7 tRING mỗi ô) — phải vào sổ;
 //   · 16 ô lạc chỉ-ADA ở địa chỉ kho — nhặt hết thì lượt gom vượt ngân sách (đã đo);
-//   · 1 ô lạc mang băm datum không ai có tiền ảnh, 5 tCARP — sổ cái thật bác mọi giao dịch tiêu nó;
+//   · 1 ô lạc mang băm datum không ai có tiền ảnh, 5 tRING — sổ cái thật bác mọi giao dịch tiêu nó;
 //   · 1 ô chỉ-ADA ở địa chỉ kho tạm — `05` từng đòi "đúng 1 ô" ở đó.
 const UNIT = 1_000_000_000n;
 {
   const s = st();
   const junk = [];
-  for (let i = 0; i < 28; i++) junk.push([s.inboxAddress, { lovelace: 1_500_000n, [s.carpUnit]: UNIT }]);
-  for (let i = 0; i < 2; i++) junk.push([s.vaultAddress, { lovelace: 1_500_000n, [s.carpUnit]: 7n * UNIT }]);
+  for (let i = 0; i < 28; i++) junk.push([s.inboxAddress, { lovelace: 1_500_000n, [s.ringUnit]: UNIT }]);
+  for (let i = 0; i < 2; i++) junk.push([s.vaultAddress, { lovelace: 1_500_000n, [s.ringUnit]: 7n * UNIT }]);
   for (let i = 0; i < 16; i++) junk.push([s.vaultAddress, { lovelace: 1_200_000n }]);
   junk.push([s.escrowAddress, { lovelace: 1_000_000n }]);
   const fake = "cd".repeat(32);
@@ -192,13 +192,13 @@ const UNIT = 1_000_000_000n;
     emulator.ledger[fake + i] = { utxo: { txHash: fake, outputIndex: i, address, assets }, spent: false };
   });
   const poison = { txHash: fake, outputIndex: junk.length, address: s.vaultAddress,
-    assets: { lovelace: 1_500_000n, [s.carpUnit]: 5n * UNIT }, datumHash: "ab".repeat(32) };
+    assets: { lovelace: 1_500_000n, [s.ringUnit]: 5n * UNIT }, datumHash: "ab".repeat(32) };
   emulator.ledger[fake + junk.length] = { utxo: poison, spent: false };
 }
 await step("03_collect_fee.mjs");
 check(
   st().collected === ((2_000n + 28n + 14n) * UNIT).toString(),
-  "lượt gom thứ hai đưa 29 ô hộp thư + 2 ô lạc có CARP vào sổ (2 042 tCARP)",
+  "lượt gom thứ hai đưa 29 ô hộp thư + 2 ô lạc có RING vào sổ (2 042 tRING)",
 );
 check((await lucid.utxosAt(st().inboxAddress)).length === 0, "hộp thư trống sau khi gom");
 {
@@ -207,7 +207,7 @@ check((await lucid.utxosAt(st().inboxAddress)).length === 0, "hộp thư trống
 }
 
 await step("04_skim.mjs");
-check(st().skimmed === (204_200_000_000n).toString(), "trích đúng 10% làm tròn lên (204,2 tCARP)");
+check(st().skimmed === (204_200_000_000n).toString(), "trích đúng 10% làm tròn lên (204,2 tRING)");
 
 // Một ngày sau khi mở phiên: giá đã rời giá mở nhưng chưa chạm sàn.
 emulator.awaitBlock(4_320);
@@ -250,40 +250,40 @@ delete process.env.NEW_OPERATOR_SEED;
   );
   const same = JSON.stringify(Object.entries(after.assets).sort(), (_, v) => typeof v === "bigint" ? v.toString() : v) ===
     JSON.stringify(Object.entries(assetsBeforeRotate).sort(), (_, v) => typeof v === "bigint" ? v.toString() : v);
-  check(same, "giá trị ô sổ y nguyên (ADA, NFT, CARP)");
+  check(same, "giá trị ô sổ y nguyên (ADA, NFT, RING)");
 }
 
 // Nộp phí vào hộp thư và gom — sau khi xoay khoá. Đây là chỗ bản cũ chết: xoay khoá = đóng kho,
 // NFT sổ bị đốt, ô hộp thư này không còn sổ nào để vào.
 await step("03_collect_fee.mjs");
-check(st().collected === ((3_042n) * UNIT).toString(), "sau khi xoay: hộp thư vẫn gom được vào cùng sổ (3 042 tCARP)");
+check(st().collected === ((3_042n) * UNIT).toString(), "sau khi xoay: hộp thư vẫn gom được vào cùng sổ (3 042 tRING)");
 
 // Ô có hoàn do người ngoài gửi vào hộp thư (bơm thẳng vào sổ Emulator như ô rác ở trên):
-//   · 28 ô, mỗi ô một credential hoàn khác nhau, 1 tCARP — ca đắt nhất của phép so hoàn: nhặt hết
+//   · 28 ô, mỗi ô một credential hoàn khác nhau, 1 tRING — ca đắt nhất của phép so hoàn: nhặt hết
 //     một lượt thì lượt gom vượt ngân sách (đã đo), nên `03` phải chia ra nhiều lượt;
-//   · 1 ô đòi hoàn về CHÍNH KHO, 5 tCARP — không giao dịch nào trả hoàn về kho được (kho đòi đúng
+//   · 1 ô đòi hoàn về CHÍNH KHO, 5 tRING — không giao dịch nào trả hoàn về kho được (kho đòi đúng
 //     một đầu ra ở địa chỉ mình), nên validator và `03` cùng coi nó như ô không datum;
-//   · 4 ô lạc có CARP ở địa chỉ kho, 7 tCARP mỗi ô — đúng trần `MAX_STRAYS`, để lượt gom đầu chở
+//   · 4 ô lạc có RING ở địa chỉ kho, 7 tRING mỗi ô — đúng trần `MAX_STRAYS`, để lượt gom đầu chở
 //     đủ phần đắt nhất của ca xấu nhất. Bỏ trần số credential của `03` thì lượt đó vượt ngân sách.
 // Mỗi credential phải nhận đúng `lovelace − refund_fee` ở một đầu ra mang thẻ băm hộp thư.
 {
   const s = st();
-  const scripts = buildScripts({ carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed });
+  const scripts = buildScripts({ ringPolicy: s.ringPolicy, ringName: s.ringName, seed: s.seed });
   const fake = "ef".repeat(32);
   const keys = Array.from({ length: 28 }, (_, i) => "22".repeat(27) + i.toString(16).padStart(2, "0"));
   const refundDatum = (index, hash) => Data.to(new Constr(0, [new Constr(index, [hash])]));
   const cells = [
-    ...keys.map((hash) => ({ datum: refundDatum(0, hash), carp: UNIT })),
-    { datum: refundDatum(1, scripts.vaultHash), carp: 5n * UNIT },
+    ...keys.map((hash) => ({ datum: refundDatum(0, hash), ring: UNIT })),
+    { datum: refundDatum(1, scripts.vaultHash), ring: 5n * UNIT },
   ];
-  cells.forEach(({ datum, carp }, i) => {
-    const assets = { lovelace: 1_500_000n, [s.carpUnit]: carp };
+  cells.forEach(({ datum, ring }, i) => {
+    const assets = { lovelace: 1_500_000n, [s.ringUnit]: ring };
     emulator.ledger[fake + i] = {
       utxo: { txHash: fake, outputIndex: i, address: s.inboxAddress, assets, datum }, spent: false,
     };
   });
   for (let i = cells.length; i < cells.length + 4; i++) {
-    const assets = { lovelace: 1_500_000n, [s.carpUnit]: 7n * UNIT };
+    const assets = { lovelace: 1_500_000n, [s.ringUnit]: 7n * UNIT };
     emulator.ledger[fake + i] = {
       utxo: { txHash: fake, outputIndex: i, address: s.vaultAddress, assets }, spent: false,
     };
@@ -298,10 +298,10 @@ check(st().collected === ((3_042n) * UNIT).toString(), "sau khi xoay: hộp thư
   check(rounds >= 2, `ô có hoàn nhiều credential được chia ra ${rounds} lượt gom, không lượt nào vượt ngân sách`);
   check(
     st().collected === (collectedBefore + (33n + 28n) * UNIT + BigInt(rounds) * 1_000n * UNIT).toString(),
-    "sổ ghi đủ CARP của 29 ô có hoàn (33 tCARP), 4 ô lạc (28 tCARP) và các ô `03` tự nộp",
+    "sổ ghi đủ RING của 29 ô có hoàn (33 tRING), 4 ô lạc (28 tRING) và các ô `03` tự nộp",
   );
   const straysLeft = (await lucid.utxosAt(s.vaultAddress)).filter((u) => u.txHash === fake).length;
-  check(straysLeft === 0, "4 ô lạc có CARP đã vào sổ");
+  check(straysLeft === 0, "4 ô lạc có RING đã vào sổ");
   const tag = Data.to(scripts.inboxHash);
   let paid = 0;
   for (const hash of keys) {
@@ -321,7 +321,7 @@ await step("05_swap_and_donate.mjs");
 // hết (dòng trên), nên lý do duy nhất để bị bác là khoá.
 {
   const s = st();
-  const scripts = buildScripts({ carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed });
+  const scripts = buildScripts({ ringPolicy: s.ringPolicy, ringName: s.ringName, seed: s.seed });
   const buildClose = async (signer) => lucid
     .newTx()
     .collectFrom([await ledgerUtxo()], Data.to("Close", VaultRedeemer))
