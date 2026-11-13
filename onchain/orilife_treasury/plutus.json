@@ -27,25 +27,25 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
         },
         {
-          "title": "min_lovelace_per_carp",
+          "title": "min_lovelace_per_ring",
           "schema": {
             "$ref": "#/definitions/Int"
           }
         },
         {
-          "title": "start_lovelace_per_carp",
+          "title": "start_lovelace_per_ring",
           "schema": {
             "$ref": "#/definitions/Int"
           }
@@ -73,25 +73,25 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
         },
         {
-          "title": "min_lovelace_per_carp",
+          "title": "min_lovelace_per_ring",
           "schema": {
             "$ref": "#/definitions/Int"
           }
         },
         {
-          "title": "start_lovelace_per_carp",
+          "title": "start_lovelace_per_ring",
           "schema": {
             "$ref": "#/definitions/Int"
           }
@@ -224,13 +224,13 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
@@ -255,13 +255,13 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
@@ -286,13 +286,13 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
@@ -314,13 +314,13 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
@@ -345,13 +345,13 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
@@ -400,13 +400,13 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
@@ -446,13 +446,13 @@
       },
       "parameters": [
         {
-          "title": "carp_policy",
+          "title": "ring_policy",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1PolicyId"
           }
         },
         {
-          "title": "carp_name",
+          "title": "ring_name",
           "schema": {
             "$ref": "#/definitions/cardano~1assets~1AssetName"
           }
@@ -576,13 +576,13 @@
           "index": 0,
           "fields": [
             {
-              "title": "carp",
-              "description": "Số CARP mà UTxO này đang giữ. Khai tường minh để người đọc không phải suy từ\n giá trị kèm theo, và để hợp đồng bắt được trường hợp khai lệch.",
+              "title": "ring",
+              "description": "Số RING mà UTxO này đang giữ. Khai tường minh để người đọc không phải suy từ\n giá trị kèm theo, và để hợp đồng bắt được trường hợp khai lệch.",
               "$ref": "#/definitions/Int"
             },
             {
               "title": "vault",
-              "description": "Băm hợp đồng kho phí đã trích khoản này ra.\n\n Vì sao cần: `list.length(own_inputs) == 1` bên kho phí chỉ đếm input CÙNG băm\n script. Hai instance kho phí khác tham số có băm khác nhau, nên mỗi cái tự thấy\n mình là input duy nhất, và MỘT output ở kho tạm thoả điều kiện cho CẢ HAI — hai\n lần `skimmed` tăng mà chỉ một lần CARP rời kho. Ràng khoản trích vào đúng một băm\n kho phí là chỗ chặn việc đó.",
+              "description": "Băm hợp đồng kho phí đã trích khoản này ra.\n\n Vì sao cần: `list.length(own_inputs) == 1` bên kho phí chỉ đếm input CÙNG băm\n script. Hai instance kho phí khác tham số có băm khác nhau, nên mỗi cái tự thấy\n mình là input duy nhất, và MỘT output ở kho tạm thoả điều kiện cho CẢ HAI — hai\n lần `skimmed` tăng mà chỉ một lần RING rời kho. Ràng khoản trích vào đúng một băm\n kho phí là chỗ chặn việc đó.",
               "$ref": "#/definitions/ByteArray"
             },
             {
@@ -592,7 +592,7 @@
             },
             {
               "title": "listed_at",
-              "description": "Mốc POSIX (ms) phiên đấu giá giảm dần của khoản này bắt đầu: tới mốc này giá còn ở\n trần, sau đó hạ tuyến tính về sàn trong `decay_ms`.\n\n Vì sao cần: trả đúng sàn ở mọi thời điểm là trao cho người gọi `Donate` một quyền\n chọn miễn phí — họ lấy CARP theo sàn và bỏ túi chênh lệch tới giá thị trường. Kho\n phí ép mốc này bằng cận trên khoảng hiệu lực của giao dịch `Skim` (không lùi ngày\n được để mua rẻ ngay), và phần dư giữ nguyên mốc của ô gốc (không đặt lại được).",
+              "description": "Mốc POSIX (ms) phiên đấu giá giảm dần của khoản này bắt đầu: tới mốc này giá còn ở\n trần, sau đó hạ tuyến tính về sàn trong `decay_ms`.\n\n Vì sao cần: trả đúng sàn ở mọi thời điểm là trao cho người gọi `Donate` một quyền\n chọn miễn phí — họ lấy RING theo sàn và bỏ túi chênh lệch tới giá thị trường. Kho\n phí ép mốc này bằng cận trên khoảng hiệu lực của giao dịch `Skim` (không lùi ngày\n được để mua rẻ ngay), và phần dư giữ nguyên mốc của ô gốc (không đặt lại được).",
               "$ref": "#/definitions/Int"
             }
           ]
@@ -604,7 +604,7 @@
       "anyOf": [
         {
           "title": "Donate",
-          "description": "Đổi CARP lấy ADA rồi nộp kho bạc. Ai cũng gọi được — cố ý: nếu OriLife biến mất\n thì lời hứa vẫn thực thi được bởi người ngoài.",
+          "description": "Đổi RING lấy ADA rồi nộp kho bạc. Ai cũng gọi được — cố ý: nếu OriLife biến mất\n thì lời hứa vẫn thực thi được bởi người ngoài.",
           "dataType": "constructor",
           "index": 0,
           "fields": []
@@ -667,7 +667,7 @@
         },
         {
           "title": "Close",
-          "description": "Đóng kho. Chỉ được khi nghĩa vụ đã trả hết; sau đó UTxO kho không còn tồn tại.\n\n Vì sao phải có: không có nó thì ADA giữ chỗ nằm lại vĩnh viễn (mọi nhánh khác đều\n ép `lovelace_of(ra) >= lovelace_of(vào)`, tức ADA chỉ có đường vào).\n\n `Close` là TẮT VĨNH VIỄN, không phải đường xoay khoá (xoay khoá là `Rotate`). NFT sổ\n bị đốt, nên mọi ô CARP còn ở hộp thư (`fee_inbox`) trỏ về kho này không còn đường vào\n sổ. Hợp đồng không chặn được việc đó: ô hộp thư không nằm trong giao dịch đóng kho, và\n validator không thấy UTxO ngoài giao dịch. Trước khi đóng phải gom hết hộp thư.",
+          "description": "Đóng kho. Chỉ được khi nghĩa vụ đã trả hết; sau đó UTxO kho không còn tồn tại.\n\n Vì sao phải có: không có nó thì ADA giữ chỗ nằm lại vĩnh viễn (mọi nhánh khác đều\n ép `lovelace_of(ra) >= lovelace_of(vào)`, tức ADA chỉ có đường vào).\n\n `Close` là TẮT VĨNH VIỄN, không phải đường xoay khoá (xoay khoá là `Rotate`). NFT sổ\n bị đốt, nên mọi ô RING còn ở hộp thư (`fee_inbox`) trỏ về kho này không còn đường vào\n sổ. Hợp đồng không chặn được việc đó: ô hộp thư không nằm trong giao dịch đóng kho, và\n validator không thấy UTxO ngoài giao dịch. Trước khi đóng phải gom hết hộp thư.",
           "dataType": "constructor",
           "index": 3,
           "fields": []

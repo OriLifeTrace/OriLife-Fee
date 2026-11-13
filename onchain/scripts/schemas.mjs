@@ -35,7 +35,7 @@ export const OutputReference = Data.Object({
 ///              đặt nó ĐÚNG bằng cận trên khoảng hiệu lực của giao dịch trích; phần dư sau
 ///              một lần `Donate` giữ nguyên giá trị này (`donation_escrow.ak`).
 export const EscrowDatum = Data.Object({
-  carp: Data.Integer(),
+  ring: Data.Integer(),
   vault: Data.Bytes(),
   parent: Data.Nullable(OutputReference),
   listed_at: Data.Integer(),

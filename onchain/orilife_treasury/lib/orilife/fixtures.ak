@@ -10,10 +10,12 @@ use cardano/transaction.{
 }
 use orilife/types.{EscrowDatum, vault_nft_name}
 
-pub const carp_policy: PolicyId =
+pub const ring_policy: PolicyId =
   #"11111111111111111111111111111111111111111111111111111111"
 
-pub const carp_name: AssetName = #"43415250"
+// Tên tài sản thử, tuỳ ý. Bytes là chữ "CARP" từ trước đợt đổi tên CARP → RING; giữ nguyên để
+// dữ liệu của các bài kiểm không đổi.
+pub const ring_name: AssetName = #"43415250"
 
 pub const vault_hash: ByteArray =
   #"22222222222222222222222222222222222222222222222222222222"
@@ -46,9 +48,9 @@ pub const tx_window_ms: Int = 60_000
 /// 10% — con số của chính sách, cố định trong mọi bài kiểm dưới đây.
 pub const skim_bps: Int = 1_000
 
-/// Giá trị gồm ADA giữ chỗ và một lượng CARP.
-pub fn value_with_carp(lovelace: Int, carp: Int) -> Value {
-  from_lovelace(lovelace) |> add(carp_policy, carp_name, carp)
+/// Giá trị gồm ADA giữ chỗ và một lượng RING.
+pub fn value_with_ring(lovelace: Int, ring: Int) -> Value {
+  from_lovelace(lovelace) |> add(ring_policy, ring_name, ring)
 }
 
 /// Thêm NFT sổ của kho phí (policy = băm kho phí) vào một giá trị.
@@ -123,9 +125,9 @@ pub fn inline(data: Data) -> Datum {
 /// là phần dư của chính ô `ref`. Hai thứ đó KHÁC nhau và hợp đồng phải phân biệt được —
 /// gộp chúng lại chính là lỗ đã vá ở bản này. `listed_at` là mốc mở phiên đấu giá.
 pub fn escrow_datum(
-  carp: Int,
+  ring: Int,
   parent: Option<OutputReference>,
   listed_at: Int,
 ) -> EscrowDatum {
-  EscrowDatum { carp, vault: vault_hash, parent, listed_at }
+  EscrowDatum { ring, vault: vault_hash, parent, listed_at }
 }

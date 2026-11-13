@@ -6,9 +6,9 @@
 //
 // `Close` là TẮT VĨNH VIỄN — KHÔNG dùng để xoay khoá vận hành (xoay khoá là
 // `07_rotate_operator.mjs`, giữ nguyên kho). `Close` đốt NFT sổ, và `fee_inbox` chỉ gom được
-// vào một sổ còn giữ NFT: ô CARP nào còn ở hộp thư lúc đóng là mất đường vào sổ mãi mãi.
+// vào một sổ còn giữ NFT: ô RING nào còn ở hộp thư lúc đóng là mất đường vào sổ mãi mãi.
 // Hợp đồng không chặn được điều đó (ô hộp thư không nằm trong giao dịch đóng kho), nên kịch
-// bản này chặn: còn ô CARP gom được ở hộp thư hay địa chỉ kho thì dừng.
+// bản này chặn: còn ô RING gom được ở hộp thư hay địa chỉ kho thì dừng.
 //
 // Chữ ký: khoá vận hành ghi trong datum ô sổ (`operator_key`), không phải khoá lúc mở kho —
 // sau một lần `Rotate` hai khoá khác nhau, và khoá cũ bị hợp đồng bác.
@@ -27,22 +27,22 @@ const s = state();
 const lucid = await connect();
 const walletAddress = await lucid.wallet().address();
 const scripts = buildScripts({
-  carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed,
+  ringPolicy: s.ringPolicy, ringName: s.ringName, seed: s.seed,
 });
 
-// Ô lạc có CARP ở địa chỉ kho, và ô hộp thư có CARP, chỉ vào sổ được qua `Collect` của một sổ
+// Ô lạc có RING ở địa chỉ kho, và ô hộp thư có RING, chỉ vào sổ được qua `Collect` của một sổ
 // CÒN SỐNG (`fee_inbox` ▸ `withdraw` đòi đầu vào giữ NFT sổ). Đóng kho khi chúng còn là bỏ lại
-// CARP đó vĩnh viễn. Ô không gom được (chỉ-ADA, datum không giải được, có script) thì không
+// RING đó vĩnh viễn. Ô không gom được (chỉ-ADA, datum không giải được, có script) thì không
 // chặn: ai cũng gửi được vào hai địa chỉ này, và chặn theo chúng là trao cho người ngoài
 // quyền không cho kho đóng.
 const { ledger: vault, strays } = splitVaultUtxos(
   await lucid.utxosAt(scripts.vaultAddress), scripts.vaultNftUnit,
 );
 const left =
-  sweepable(strays, scripts.carpUnit, Infinity).picked.length +
-  sweepable(await lucid.utxosAt(scripts.inboxAddress), scripts.carpUnit, Infinity).picked.length;
+  sweepable(strays, scripts.ringUnit, Infinity).picked.length +
+  sweepable(await lucid.utxosAt(scripts.inboxAddress), scripts.ringUnit, Infinity).picked.length;
 if (left > 0) {
-  throw new Error(`còn ${left} ô CARP ở địa chỉ kho hoặc hộp thư — gom bằng 03_collect_fee.mjs trước khi đóng`);
+  throw new Error(`còn ${left} ô RING ở địa chỉ kho hoặc hộp thư — gom bằng 03_collect_fee.mjs trước khi đóng`);
 }
 const ledger = Data.from(vault.datum, VaultDatum);
 
@@ -67,8 +67,8 @@ if (obligation !== ledger.skimmed) {
   );
 }
 
-const held = vault.assets[scripts.carpUnit] ?? 0n;
-console.log("thu về   ", vault.assets.lovelace, "lovelace +", held, "đơn vị tCARP");
+const held = vault.assets[scripts.ringUnit] ?? 0n;
+console.log("thu về   ", vault.assets.lovelace, "lovelace +", held, "đơn vị tRING");
 
 const tx = await lucid
   .newTx()

@@ -2,7 +2,7 @@
 // và hai con số sổ; chỉ `operator_key` trong datum đổi.
 //
 // Vì sao không "đóng kho rồi mở kho mới": `Close` đốt NFT sổ, và `fee_inbox` bake băm kho cũ,
-// chỉ gom được vào một sổ còn giữ NFT ⟹ mọi ô CARP còn ở hộp thư mất đường vào sổ mãi mãi.
+// chỉ gom được vào một sổ còn giữ NFT ⟹ mọi ô RING còn ở hộp thư mất đường vào sổ mãi mãi.
 // `Rotate` không đổi băm kho, nên hộp thư, kho tạm, NFT sổ đều nguyên.
 //
 // Hợp đồng đòi HAI chữ ký (`fee_vault.ak` ▸ nhánh `Rotate`):
@@ -30,7 +30,7 @@ const newKey = keyHashOf(newWallet.address);
 
 const s = state();
 const lucid = await connect();
-const scripts = buildScripts({ carpPolicy: s.carpPolicy, carpName: s.carpName, seed: s.seed });
+const scripts = buildScripts({ ringPolicy: s.ringPolicy, ringName: s.ringName, seed: s.seed });
 
 const { ledger: vault } = splitVaultUtxos(
   await lucid.utxosAt(scripts.vaultAddress), scripts.vaultNftUnit,

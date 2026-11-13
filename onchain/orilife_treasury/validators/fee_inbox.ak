@@ -1,5 +1,5 @@
-//// Hộp thư phí. Địa chỉ trung gian cho CARP phí nền tảng, dành cho những giao dịch không
-//// kèm được `Collect` của kho phí (ví dụ giao dịch ConsumeMAGIC chỉ có thể trả CARP tới
+//// Hộp thư phí. Địa chỉ trung gian cho RING phí nền tảng, dành cho những giao dịch không
+//// kèm được `Collect` của kho phí (ví dụ giao dịch ConsumeMAGIC chỉ có thể trả RING tới
 //// một địa chỉ). Tiền ở đây chỉ có MỘT lối ra có nghĩa: vào sổ kho phí.
 ////
 //// Ai cũng gom được, cố ý: không phụ thuộc OriLife. Lovelace và token khác nằm trong UTxO
@@ -16,7 +16,7 @@
 //// kho phải nằm trong danh sách này vì không giao dịch nào trả hoàn về đó được: lượt gom bắt
 //// buộc tiêu ô sổ, mà kho đòi ĐÚNG MỘT đầu ra ở địa chỉ của nó (ô sổ mang `VaultDatum`, không
 //// mang thẻ hoàn) — đòi hoàn về kho là khoá ô vĩnh viễn. Lý do: Feecover tự soát datum trong
-//// chính giao dịch nó ký, nên datum sai hình là lỗi của bên ứng; còn nếu từ chối ô đó thì CARP
+//// chính giao dịch nó ký, nên datum sai hình là lỗi của bên ứng; còn nếu từ chối ô đó thì RING
 //// trong ô kẹt vĩnh viễn ở hộp thư (không lối ra nào khác) — kẹt tiền phí tệ hơn mất khoản ứng.
 //// Ô mang `DatumHash` thì validator cũng coi như không datum, nhưng KHÔNG có lời hứa gom được:
 //// ledger đòi preimage của datum cho mọi đầu vào khoá Plutus mang `DatumHash` (lỗi phase-1
@@ -29,12 +29,12 @@
 ////
 //// Phép so hoàn GỘP THEO CREDENTIAL: với mỗi credential `c`, tổng lovelace mọi ĐẦU RA HOÀN về
 //// `c` ≥ Σ (lovelace(ô) − `refund_fee`) trên mọi ô có hoàn mang `c`. So từng ô với "có một đầu
-//// ra đủ" thì một đầu ra thoả cho hai ô cùng `c` (thoả kép, cùng họ với phép so CARP gộp ở dưới).
+//// ra đủ" thì một đầu ra thoả cho hai ô cùng `c` (thoả kép, cùng họ với phép so RING gộp ở dưới).
 ////
 //// Đầu ra HOÀN có hình cố định, khác hình thì không được đếm: địa chỉ enterprise đúng `c` (không
 //// phần uỷ quyền), `InlineDatum` = băm script của CHÍNH hộp thư này (ByteArray), không reference
 //// script. Ba lý do, đo bằng bài kiểm:
-////   * hai phiên bản hộp thư (khác băm, cùng kho — kho cộng CARP của mọi đầu vào script nên
+////   * hai phiên bản hộp thư (khác băm, cùng kho — kho cộng RING của mọi đầu vào script nên
 ////     cho phép) mỗi bản một ô hoàn về cùng `c`: không có thẻ thì MỘT đầu ra về `c` thoả cả hai
 ////     mặt withdraw. Thẻ băm riêng từng phiên bản ⟹ hai bản không dùng chung được đầu ra;
 ////   * người gom không được tự chọn datum / phần uỷ quyền / reference script của tiền hoàn;
@@ -44,12 +44,12 @@
 //// được — hộp thư không thấy luật của script khác; bên dùng `c` làm đích ở nơi khác phải tự chặn.
 ////
 //// Hộp thư không đọc redeemer của kho phí. Nó không cần: trong mọi nhánh của kho, chỉ
-//// `Collect` làm CARP ở ô sổ TĂNG (`Operate` cấm nạp, `Skim` làm giảm), và `Collect` ép
-//// `collected` tăng đúng bằng phần tăng. Nên "CARP ô sổ tăng ít nhất bằng X" đã có nghĩa
+//// `Collect` làm RING ở ô sổ TĂNG (`Operate` cấm nạp, `Skim` làm giảm), và `Collect` ép
+//// `collected` tăng đúng bằng phần tăng. Nên "RING ô sổ tăng ít nhất bằng X" đã có nghĩa
 //// là "X đã vào sổ".
 ////
-//// Vì sao phép so cộng CẢ CARP của đầu vào lạc bên kho: kho tự kiểm phần tăng ≥ CARP lạc
-//// của nó, hộp thư tự kiểm phần tăng ≥ CARP hộp thư. Mỗi bên kiểm riêng thì hộp thư 100 +
+//// Vì sao phép so cộng CẢ RING của đầu vào lạc bên kho: kho tự kiểm phần tăng ≥ RING lạc
+//// của nó, hộp thư tự kiểm phần tăng ≥ RING hộp thư. Mỗi bên kiểm riêng thì hộp thư 100 +
 //// lạc 100 mà kho chỉ tăng 100 vẫn qua cả hai — một phần tăng thoả cho hai nguồn. Phép so
 //// GỘP ở đây là chỗ duy nhất nhìn thấy cả hai nguồn cùng lúc.
 ////
@@ -62,7 +62,7 @@
 //// Đòi hỏi vận hành: stake credential của script phải được ĐĂNG KÝ một lần trên chuỗi.
 ////
 //// Hệ quả phải biết: UTxO nào đặt ở địa chỉ hộp thư cũng là của chùa — kể cả một ô giữ
-//// reference script. Đừng đặt gì ở đây ngoài CARP phí.
+//// reference script. Đừng đặt gì ở đây ngoài RING phí.
 
 use aiken/collection/list
 use aiken/collection/pairs
@@ -82,8 +82,8 @@ use cardano/transaction.{
   Transaction,
 }
 use orilife/fixtures.{
-  carp_name, carp_policy, inbox_hash, inline, input_from, operator_key, ref_at,
-  script_output, stranger_key, tx, value_with_carp, vault_hash, wallet_output,
+  ring_name, ring_policy, inbox_hash, inline, input_from, operator_key, ref_at,
+  script_output, stranger_key, tx, value_with_ring, vault_hash, wallet_output,
   with_vault_nft,
 }
 use orilife/types.{InboxDatum, VaultDatum, vault_nft_name}
@@ -94,8 +94,8 @@ use orilife/types.{InboxDatum, VaultDatum, vault_nft_name}
 const refund_fee: Int = 100_000
 
 validator fee_inbox(
-  carp_policy: PolicyId,
-  carp_name: AssetName,
+  ring_policy: PolicyId,
+  ring_name: AssetName,
   /// Băm kho phí. Đồng thời là policy của NFT sổ — kho phí đúc NFT bằng chính script mình.
   vault_hash: ByteArray,
 ) {
@@ -126,7 +126,7 @@ validator fee_inbox(
     // Một vòng qua đầu vào, chia ba loại: ô hộp thư (MỌI ô ở script này), ô sổ (giữ NFT),
     // ô lạc bên kho (script kho, không NFT).
     // Ô hộp thư có hoàn còn cộng nợ hoàn vào `owed`, gộp theo credential.
-    let (ledger_inputs, inbox_carp, vault_stray_carp, owed) =
+    let (ledger_inputs, inbox_ring, vault_stray_ring, owed) =
       list.foldr(
         tx.inputs,
         ([], 0, 0, []),
@@ -137,7 +137,7 @@ validator fee_inbox(
           if credential == inbox_credential {
             (
               ledgers,
-              inbox + carp_of(output, carp_policy, carp_name),
+              inbox + ring_of(output, ring_policy, ring_name),
               strays,
               add_refund_owed(owed, output, vault_credential),
             )
@@ -147,7 +147,7 @@ validator fee_inbox(
             (
               ledgers,
               inbox,
-              strays + carp_of(output, carp_policy, carp_name),
+              strays + ring_of(output, ring_policy, ring_name),
               owed,
             )
           } else {
@@ -164,13 +164,13 @@ validator fee_inbox(
     when (ledger_inputs, ledger_outputs) is {
       ([ledger_input], [ledger_output]) -> {
         let ledger_gain =
-          carp_of(ledger_output, carp_policy, carp_name) - carp_of(
+          ring_of(ledger_output, ring_policy, ring_name) - ring_of(
             ledger_input,
-            carp_policy,
-            carp_name,
+            ring_policy,
+            ring_name,
           )
         and {
-          ledger_gain >= inbox_carp + vault_stray_carp,
+          ledger_gain >= inbox_ring + vault_stray_ring,
           refunds_paid(owed, tx.outputs, refund_tag),
         }
       }
@@ -200,7 +200,7 @@ fn holds_vault_nft(output: Output, vault_hash: ByteArray) -> Bool {
   quantity_of(output.value, vault_hash, vault_nft_name) == 1
 }
 
-fn carp_of(output: Output, policy: PolicyId, name: AssetName) -> Int {
+fn ring_of(output: Output, policy: PolicyId, name: AssetName) -> Int {
   quantity_of(output.value, policy, name)
 }
 
@@ -215,7 +215,7 @@ fn add_refund_owed(
     InlineDatum(data) ->
       if data is InboxDatum { refund }: InboxDatum {
         // Hai đích không trả hoàn được, cả hai coi là datum sai hình (đòi hoàn về đó là khoá
-        // vĩnh viễn ô và CARP trong ô):
+        // vĩnh viễn ô và RING trong ô):
         //   * băm không đủ 28 byte: không địa chỉ nào trên chuỗi mang được credential đó;
         //   * băm kho: lượt gom tiêu ô sổ, kho đòi đúng một đầu ra ở địa chỉ mình, và đầu ra đó
         //     là ô sổ (`VaultDatum`, không thẻ hoàn).
@@ -335,8 +335,8 @@ fn void() -> Data {
 /// Mặt `withdraw` — luật gom.
 fn withdraw_ok(tx_body: Transaction) -> Bool {
   fee_inbox.withdraw(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     vault_hash,
     void(),
     Script(inbox_hash),
@@ -347,8 +347,8 @@ fn withdraw_ok(tx_body: Transaction) -> Bool {
 /// Mặt `spend` của một ô hộp thư.
 fn spend_ok(own_ref: OutputReference, tx_body: Transaction) -> Bool {
   fee_inbox.spend(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     vault_hash,
     None,
     void(),
@@ -359,8 +359,8 @@ fn spend_ok(own_ref: OutputReference, tx_body: Transaction) -> Bool {
 
 fn publish_ok(certificate: Certificate) -> Bool {
   fee_inbox.publish(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     vault_hash,
     void(),
     certificate,
@@ -368,22 +368,22 @@ fn publish_ok(certificate: Certificate) -> Bool {
   )
 }
 
-fn ledger(carp: Int) -> Output {
+fn ledger(ring: Int) -> Output {
   script_output(
     vault_hash,
-    with_vault_nft(value_with_carp(2_000_000, carp)),
-    inline(VaultDatum { collected: carp, skimmed: 0, operator_key }),
+    with_vault_nft(value_with_ring(2_000_000, ring)),
+    inline(VaultDatum { collected: ring, skimmed: 0, operator_key }),
   )
 }
 
 /// UTxO hộp thư như bên trả phí để lại: không datum.
-fn inbox_utxo(lovelace: Int, carp: Int) -> Output {
-  script_output(inbox_hash, value_with_carp(lovelace, carp), NoDatum)
+fn inbox_utxo(lovelace: Int, ring: Int) -> Output {
+  script_output(inbox_hash, value_with_ring(lovelace, ring), NoDatum)
 }
 
 /// UTxO lạc ở địa chỉ kho: không NFT, không datum.
-fn vault_stray(carp: Int) -> Output {
-  script_output(vault_hash, value_with_carp(3_000_000, carp), NoDatum)
+fn vault_stray(ring: Int) -> Output {
+  script_output(vault_hash, value_with_ring(3_000_000, ring), NoDatum)
 }
 
 /// Giao dịch gom: đầu vào đánh số theo vị trí, kèm lượt rút 0 từ chính hộp thư.
@@ -399,7 +399,7 @@ fn sweep(inputs: List<Output>, outputs: List<Output>) -> Transaction {
   }
 }
 
-/// CỰC DƯƠNG. Ô hộp thư không datum, 100 CARP; ô sổ tăng đúng 100. Cả hai mặt đều qua.
+/// CỰC DƯƠNG. Ô hộp thư không datum, 100 RING; ô sổ tăng đúng 100. Cả hai mặt đều qua.
 test an_inbox_utxo_without_datum_is_sweepable_into_collect() {
   let body = sweep([ledger(0), inbox_utxo(2_000_000, 100)], [ledger(100)])
   and {
@@ -408,7 +408,7 @@ test an_inbox_utxo_without_datum_is_sweepable_into_collect() {
   }
 }
 
-test sweep_fails_when_the_vault_gains_less_than_the_inbox_carp() {
+test sweep_fails_when_the_vault_gains_less_than_the_inbox_ring() {
   !withdraw_ok(sweep([ledger(0), inbox_utxo(2_000_000, 100)], [ledger(99)]))
 }
 
@@ -419,7 +419,7 @@ test sweep_fails_without_the_vault_nft_input() {
       [
         script_output(
           vault_hash,
-          value_with_carp(2_000_000, 0),
+          value_with_ring(2_000_000, 0),
           inline(VaultDatum { collected: 0, skimmed: 0, operator_key }),
         ),
         inbox_utxo(2_000_000, 100),
@@ -436,7 +436,7 @@ test sweep_fails_without_the_vault_nft_output() {
       [
         script_output(
           vault_hash,
-          value_with_carp(2_000_000, 100),
+          value_with_ring(2_000_000, 100),
           inline(VaultDatum { collected: 100, skimmed: 0, operator_key }),
         ),
         wallet_output(
@@ -449,7 +449,7 @@ test sweep_fails_without_the_vault_nft_output() {
 }
 
 /// CỰC DƯƠNG của cặp dưới: hộp thư 100 + lạc 100, sổ tăng 200.
-test inbox_and_vault_stray_carp_both_reach_the_ledger() {
+test inbox_and_vault_stray_ring_both_reach_the_ledger() {
   withdraw_ok(
     sweep(
       [ledger(0), inbox_utxo(2_000_000, 100), vault_stray(100)],
@@ -573,17 +573,17 @@ fn other_feecover() -> Credential {
 }
 
 /// UTxO hộp thư do Feecover ứng min-ADA: datum `InboxDatum { refund }`.
-fn refund_inbox(lovelace: Int, carp: Int, refund: Credential) -> Output {
+fn refund_inbox(lovelace: Int, ring: Int, refund: Credential) -> Output {
   script_output(
     inbox_hash,
-    value_with_carp(lovelace, carp),
+    value_with_ring(lovelace, ring),
     inline(InboxDatum { refund }),
   )
 }
 
 /// UTxO hộp thư mang một datum tuỳ ý (để thử datum sai hình).
-fn inbox_with_datum(lovelace: Int, carp: Int, datum: Data) -> Output {
-  script_output(inbox_hash, value_with_carp(lovelace, carp), inline(datum))
+fn inbox_with_datum(lovelace: Int, ring: Int, datum: Data) -> Output {
+  script_output(inbox_hash, value_with_ring(lovelace, ring), inline(datum))
 }
 
 /// Đầu ra HOÀN đúng hình: enterprise về `credential`, thẻ = băm hộp thư, không ref script.
@@ -611,8 +611,8 @@ fn spend_with_datum_ok(
   tx_body: Transaction,
 ) -> Bool {
   fee_inbox.spend(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     vault_hash,
     Some(datum),
     void(),
@@ -796,8 +796,8 @@ test overpaying_one_credential_cannot_cover_another() {
   )
 }
 
-/// CỰC ÂM. Hoàn đủ mà CARP không vào sổ: luật CARP vẫn nguyên.
-test a_paid_refund_does_not_waive_the_carp_rule() {
+/// CỰC ÂM. Hoàn đủ mà RING không vào sổ: luật RING vẫn nguyên.
+test a_paid_refund_does_not_waive_the_ring_rule() {
   !withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, feecover())],
@@ -836,7 +836,7 @@ test malformed_datums_are_treated_like_datumless_cells_in_phase_two() {
   let hashed =
     script_output(
       inbox_hash,
-      value_with_carp(2_000_000, 100),
+      value_with_ring(2_000_000, 100),
       DatumHash(
         #"0000000000000000000000000000000000000000000000000000000000000000",
       ),
@@ -870,8 +870,8 @@ const other_inbox_hash: ByteArray =
 /// Mặt `withdraw` của một phiên bản hộp thư bất kỳ (băm `hash`), cùng kho.
 fn withdraw_as(hash: ByteArray, tx_body: Transaction) -> Bool {
   fee_inbox.withdraw(
-    carp_policy,
-    carp_name,
+    ring_policy,
+    ring_name,
     vault_hash,
     void(),
     Script(hash),
@@ -879,7 +879,7 @@ fn withdraw_as(hash: ByteArray, tx_body: Transaction) -> Bool {
   )
 }
 
-/// Hai phiên bản hộp thư, mỗi bản một ô hoàn về Feecover, sổ ghi đủ CARP của cả hai.
+/// Hai phiên bản hộp thư, mỗi bản một ô hoàn về Feecover, sổ ghi đủ RING của cả hai.
 fn two_versions_sweep(refunds: List<Output>) -> Transaction {
   sweep(
     [
@@ -887,7 +887,7 @@ fn two_versions_sweep(refunds: List<Output>) -> Transaction {
       refund_inbox(2_000_000, 100, feecover()),
       script_output(
         other_inbox_hash,
-        value_with_carp(2_000_000, 100),
+        value_with_ring(2_000_000, 100),
         inline(InboxDatum { refund: feecover() }),
       ),
     ],
@@ -988,7 +988,7 @@ test a_refund_output_with_a_reference_script_is_not_counted() {
 
 /// CỰC DƯƠNG. `refund` = băm kho: không giao dịch nào trả hoàn về kho được (kho đòi đúng một
 /// đầu ra ở địa chỉ mình, và đó là ô sổ), nên đòi hoàn là khoá ô vĩnh viễn. Ô được gom như ô
-/// không datum: CARP vào sổ, lovelace về người gom.
+/// không datum: RING vào sổ, lovelace về người gom.
 test a_refund_to_the_vault_is_swept_like_a_datumless_cell() {
   withdraw_ok(
     sweep(
@@ -998,8 +998,8 @@ test a_refund_to_the_vault_is_swept_like_a_datumless_cell() {
   )
 }
 
-/// CỰC ÂM của bài trên: miễn nợ hoàn KHÔNG miễn luật CARP — sổ tăng thiếu một đơn vị là bác.
-test a_refund_to_the_vault_still_owes_its_carp_to_the_ledger() {
+/// CỰC ÂM của bài trên: miễn nợ hoàn KHÔNG miễn luật RING — sổ tăng thiếu một đơn vị là bác.
+test a_refund_to_the_vault_still_owes_its_ring_to_the_ledger() {
   !withdraw_ok(
     sweep(
       [ledger(0), refund_inbox(2_000_000, 100, Script(vault_hash))],
