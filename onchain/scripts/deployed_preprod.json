@@ -107,10 +107,10 @@
   "inboxHash": "c741b64f2730b66a998f62b90b1154ecca17ab8e0781ac5f70e5949b",
   "inboxRewardAddress": "stake_test17rr5rdj0yuctv65e3a3tjzc32nkv59at3crcrtzlwrjefxc5vy7w7",
   "openTx": "8b027d802bfeb3beae4b6b44fa869744de120de365d103a7bfa8152b7792259a",
-  "payInboxTx": "ffb450d6ae91a17b0dd57b371a71213a5ced4d28a8b92560217d282210393b55",
-  "collectTx": "4d8945315b657a59762000c1947d2f7ee4af7ded7d594acbd7358715aa12d144",
-  "collected": "500000000",
-  "skimTx": "0ef5c0b46ee164d01c75b8b89698b7bb7da305e5f8f1f11b95bbda65fe972084",
-  "skimmed": "50000000",
-  "listedAt": 1793925219000
+  "payInboxTx": "e3db122dc42f81e901a05899ec832243982b510765f52299111d0ccb89e07200",
+  "collectTx": "3decccb5abff8e1e7ad3be03824cb22072148f1ffaa2a2bc2e425923329c530b",
+  "collected": "600000000",
+  "skimTx": "d8a477167eddde29c41c37f466e3a46c2a79cd79ccd41ef21a5f76a4f6aa0168",
+  "skimmed": "60000000",
+  "listedAt": 1794797560000
 }
